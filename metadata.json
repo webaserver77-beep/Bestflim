@@ -1,0 +1,6 @@
+{
+  "name": "Best Films",
+  "description": "Bilingual English and Kinyarwanda movie and series streaming platform with search, recommendations, and optional accounts.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

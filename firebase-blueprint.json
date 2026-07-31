@@ -1,0 +1,39 @@
+{
+  "entities": {
+    "movies": {
+      "title": "String",
+      "genre": "String",
+      "type": "String",
+      "releaseYear": "Number",
+      "rating": "Number",
+      "duration": "String",
+      "translator": "String",
+      "posterUrl": "String",
+      "videoUrl": "String",
+      "description": "String",
+      "isVIP": "Boolean",
+      "isTrending": "Boolean",
+      "downloadsCount": "Number",
+      "viewsCount": "Number"
+    },
+    "ads": {
+      "title": "String",
+      "imageUrl": "String",
+      "targetUrl": "String",
+      "location": "String",
+      "isActive": "Boolean",
+      "createdAt": "String",
+      "clicksCount": "Number"
+    },
+    "support_messages": {
+      "name": "String",
+      "email": "String",
+      "subject": "String",
+      "message": "String",
+      "createdAt": "String",
+      "isRead": "Boolean",
+      "status": "String",
+      "replyText": "String"
+    }
+  }
+}
