@@ -96,19 +96,6 @@ export const Header: React.FC<HeaderProps> = ({
             <User className="w-4 h-4" />
             <span>{t('navAccount')}</span>
           </button>
-
-          <button
-            id="nav-tab-admin"
-            onClick={() => setActiveTab('admin')}
-            className={`flex items-center space-x-2 px-3.5 py-2 rounded-lg text-sm font-semibold transition-all ${
-              activeTab === 'admin'
-                ? 'bg-amber-500 text-zinc-950 font-bold shadow-md shadow-amber-950/40'
-                : 'text-amber-400/80 hover:text-amber-300 hover:bg-zinc-800/60'
-            }`}
-          >
-            <ShieldCheck className="w-4 h-4" />
-            <span>Admin</span>
-          </button>
         </nav>
 
         {/* Right Section: Language Switcher & Account Badge */}

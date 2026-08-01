@@ -19,10 +19,41 @@ import { getStoredNotifications } from './data/notifications';
 import { Sparkles } from 'lucide-react';
 
 export function BestFilmsApp() {
-  const [activeTab, setActiveTab] = useState<'home' | 'search' | 'help' | 'account' | 'admin'>('home');
+  const [activeTab, setActiveTab] = useState<'home' | 'search' | 'help' | 'account' | 'admin'>(() => {
+    if (typeof window !== 'undefined') {
+      const path = window.location.pathname.toLowerCase();
+      const hash = window.location.hash.toLowerCase();
+      const search = window.location.search.toLowerCase();
+      if (path.includes('/weba') || hash.includes('weba') || search.includes('weba')) {
+        return 'admin';
+      }
+    }
+    return 'home';
+  });
   const [selectedMovie, setSelectedMovie] = useState<Movie | null>(null);
   const [searchInitialQuery, setSearchInitialQuery] = useState<string>('');
   const [movies, setMovies] = useState<Movie[]>(MOVIES_DATA);
+
+  // Hidden Route Listener for /Weba or /weba
+  useEffect(() => {
+    const handleLocationCheck = () => {
+      if (typeof window !== 'undefined') {
+        const path = window.location.pathname.toLowerCase();
+        const hash = window.location.hash.toLowerCase();
+        const search = window.location.search.toLowerCase();
+        if (path.includes('/weba') || hash.includes('weba') || search.includes('weba')) {
+          setActiveTab('admin');
+        }
+      }
+    };
+    handleLocationCheck();
+    window.addEventListener('popstate', handleLocationCheck);
+    window.addEventListener('hashchange', handleLocationCheck);
+    return () => {
+      window.removeEventListener('popstate', handleLocationCheck);
+      window.removeEventListener('hashchange', handleLocationCheck);
+    };
+  }, []);
 
   // Notifications State
   const [isNotifModalOpen, setIsNotifModalOpen] = useState<boolean>(false);

@@ -15,7 +15,7 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
 
   return (
     <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-zinc-950/95 backdrop-blur-lg border-t border-zinc-800/80 px-2 py-2">
-      <div className="grid grid-cols-5 gap-1">
+      <div className="grid grid-cols-4 gap-1">
         
         {/* Ahabanza (Home) */}
         <button
@@ -72,21 +72,6 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
           <User className="w-5 h-5 mb-1" />
           <span className="text-[10px] truncate max-w-full">{t('navAccount')}</span>
         </button>
-
-        {/* Admin */}
-        <button
-          id="mobile-nav-admin"
-          onClick={() => setActiveTab('admin')}
-          className={`flex flex-col items-center justify-center py-2 px-1 rounded-xl transition-all ${
-            activeTab === 'admin'
-              ? 'text-amber-400 font-bold bg-amber-950/40 border border-amber-800/30'
-              : 'text-zinc-400 hover:text-amber-400'
-          }`}
-        >
-          <ShieldCheck className="w-5 h-5 mb-1" />
-          <span className="text-[10px] truncate max-w-full">Admin</span>
-        </button>
-
       </div>
     </nav>
   );
