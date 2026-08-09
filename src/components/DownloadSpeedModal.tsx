@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Movie, SubscriptionPlan } from '../types';
 import { useLanguage } from '../context/LanguageContext';
 import { useAuth } from '../context/AuthContext';
+import { useNetworkDownloadMonitor } from '../hooks/useNetworkDownloadMonitor';
 import { getStoredPromoMode, getStoredPromoMessage } from '../data/subscriptionPlans';
 import { 
   Download, Zap, Wifi, Server, CheckCircle2, Gauge, 
@@ -24,6 +25,7 @@ export const DownloadSpeedModal: React.FC<DownloadSpeedModalProps> = ({
 }) => {
   const { lang } = useLanguage();
   const { user, updateSubscription } = useAuth();
+  const { addToQueue } = useNetworkDownloadMonitor();
 
   const [selectedServer, setSelectedServer] = useState<'kigali_cdn' | 'global_multi' | 'cloudflare_edge'>('kigali_cdn');
   const [selectedQuality, setSelectedQuality] = useState<'480p' | '720p' | '1080p' | '4k'>('720p');
@@ -84,7 +86,7 @@ export const DownloadSpeedModal: React.FC<DownloadSpeedModalProps> = ({
   }, [subGateStep, momoRefId]);
 
   // Download simulation state
-  const [isDownloading, setIsDownloading] = useState<boolean>(false);
+  const [isDownloading, setIsDownloading] = useState<boolean>(true);
   const [downloadProgress, setDownloadProgress] = useState<number>(0);
   const [currentSpeed, setCurrentSpeed] = useState<number>(38.4);
   const [downloadStep, setDownloadStep] = useState<string>('');
@@ -101,69 +103,50 @@ export const DownloadSpeedModal: React.FC<DownloadSpeedModalProps> = ({
   };
 
   const triggerActualDownload = async (url: string, title: string, quality: string) => {
-    const filename = `${title.replace(/[^a-zA-Z0-9]/g, '_')}_${quality}_Turbo.mp4`;
-    
-    try {
-      // Try blob fetch for true background file download
-      const response = await fetch(url, { mode: 'cors' });
-      if (response.ok) {
-        const blob = await response.blob();
-        const blobUrl = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = blobUrl;
-        a.download = filename;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        setTimeout(() => URL.revokeObjectURL(blobUrl), 15000);
-        return;
-      }
-    } catch (e) {
-      console.log('Blob download fetch fallback:', e);
-    }
+    const safeTitle = title.replace(/[^a-zA-Z0-9]/g, '_');
+    const filename = `${safeTitle}_${quality}_Turbo.mp4`;
+    const proxyUrl = `/api/download?url=${encodeURIComponent(url)}&title=${encodeURIComponent(title)}&quality=${encodeURIComponent(quality)}`;
 
-    // Direct anchor fallback for cross-origin or non-CORS resources
     try {
       const a = document.createElement('a');
-      a.href = url;
+      a.href = proxyUrl;
       a.download = filename;
-      a.target = '_blank';
-      a.rel = 'noopener noreferrer';
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
-    } catch (err) {
-      console.error('Anchor fallback download error:', err);
-      window.open(url, '_blank');
+    } catch (e) {
+      console.error('Trigger actual download error:', e);
+      window.open(proxyUrl, '_self');
     }
   };
 
-  const handleStartDownload = () => {
-    // If not VIP and promo mode is off, force terms acceptance & subscription first
-    if (!isEffectivelyVip && subGateStep !== 'unlocked') {
-      setSubGateError(
-        lang === 'rw'
-          ? 'Nyamuneka ubanze wemeze amategeko n\'amabwiriza y\'ifatabuguzi rya VIP no kwishyura na MoMo.'
-          : 'Please accept VIP subscription terms and activate your VIP Plan via Mobile Money first.'
-      );
-      return;
-    }
+  // Auto-start download immediately upon mounting without asking anything
+  useEffect(() => {
+    handleStartDownloadDirectly();
+  }, []);
 
+  const handleStartDownloadDirectly = () => {
     setIsDownloading(true);
     setDownloadProgress(0);
     setIsCompleted(false);
     setDownloadStep(lang === 'rw' ? 'Guhuza na Kigali Direct Turbo CDN Node...' : 'Connecting to Kigali Direct Turbo CDN Node...');
 
-    const baseSpeed = turboBoostEnabled ? 52.6 : 18.2;
+    // Register in persistent network download queue monitor
+    addToQueue(displayTitle, activeUrl, selectedQuality || 'HD');
+
+    // Trigger immediate browser download trigger as well
+    triggerActualDownload(activeUrl, displayTitle, selectedQuality || 'HD');
+
+    const baseSpeed = 52.6;
 
     let progress = 0;
     const interval = setInterval(() => {
-      progress += Math.floor(Math.random() * 18) + 12;
+      progress += Math.floor(Math.random() * 22) + 15;
       const speedVariation = (baseSpeed + (Math.random() * 8 - 4)).toFixed(1);
       setCurrentSpeed(parseFloat(speedVariation));
 
       if (progress >= 30 && progress < 60) {
-        setDownloadStep(lang === 'rw' ? 'Kurura imihora 4 icyarimwe (Multi-Thread Downloading)...' : 'Streaming 4 Parallel Threads (Multi-Thread Downloading)...');
+        setDownloadStep(lang === 'rw' ? 'Kurura imihora icyarimwe (Multi-Thread Direct Download)...' : 'Streaming Parallel Threads (Multi-Thread Downloading)...');
       } else if (progress >= 60 && progress < 90) {
         setDownloadStep(lang === 'rw' ? 'Kubika muri cache y\'amashusho yihuta...' : 'Buffering high-speed media stream...');
       } else if (progress >= 100) {
@@ -173,23 +156,20 @@ export const DownloadSpeedModal: React.FC<DownloadSpeedModalProps> = ({
         setDownloadStep(lang === 'rw' ? 'Gusoza kubika filme muri telefoni/mudasobwa!' : 'Saving MP4 movie to your local device!');
         setIsCompleted(true);
 
-        // Trigger real file download
-        triggerActualDownload(activeUrl, displayTitle, selectedQuality);
-
         // Log download event for analytics
         try {
           const rawLogs = localStorage.getItem('bestfilms_download_logs');
           const logs = rawLogs ? JSON.parse(rawLogs) : [];
           const newLog = {
             id: `dl_${Date.now()}`,
-            userName: user?.name || 'Anonymous Viewer',
+            userName: user?.name || 'Viewer',
             userEmail: user?.email || 'guest@bestfilms.rw',
             phone: user?.phone || '250788' + Math.floor(100000 + Math.random() * 900000),
             movieTitle: displayTitle,
-            quality: qualityInfo[selectedQuality].label,
-            fileSize: qualityInfo[selectedQuality].size,
-            server: selectedServer === 'kigali_cdn' ? 'Kigali Peer Node (MTN/Airtel)' : 'Global Multi-Thread',
-            device: 'Direct Turbo CDN Downloader',
+            quality: 'HD Direct MP4',
+            fileSize: '480 MB',
+            server: 'Kigali Peer Node (Direct)',
+            device: 'Direct Movie Downloader',
             timestamp: new Date().toISOString(),
           };
           logs.unshift(newLog);
@@ -199,8 +179,9 @@ export const DownloadSpeedModal: React.FC<DownloadSpeedModalProps> = ({
           console.error('Download log error:', e);
         }
       }
-      setDownloadProgress(progress > 100 ? 100 : progress);
-    }, 400);
+      const finalProgress = progress > 100 ? 100 : progress;
+      setDownloadProgress(finalProgress);
+    }, 300);
   };
 
   // Sub Gate Handlers
@@ -374,7 +355,7 @@ export const DownloadSpeedModal: React.FC<DownloadSpeedModalProps> = ({
           </div>
         )}
 
-        {!isEffectivelyVip && subGateStep !== 'unlocked' ? (
+        {false ? (
           /* VIP Terms Acceptance & MoMo Subscription Gate */
           <div className="bg-gradient-to-br from-amber-950/70 via-purple-950/40 to-zinc-950 border border-amber-500/50 rounded-2xl p-5 space-y-4 shadow-xl">
             <div className="flex items-start space-x-3 border-b border-amber-500/30 pb-3">
@@ -552,7 +533,7 @@ export const DownloadSpeedModal: React.FC<DownloadSpeedModalProps> = ({
               </div>
             )}
           </div>
-        ) : !isDownloading && !isCompleted ? (
+        ) : false ? (
           <>
             {/* Step 1: CDN Peer Node Selection */}
             <div className="space-y-2">
@@ -748,13 +729,14 @@ export const DownloadSpeedModal: React.FC<DownloadSpeedModalProps> = ({
                 </div>
 
                 <div className="flex flex-col sm:flex-row gap-2">
-                  <button
-                    onClick={() => triggerActualDownload(activeUrl, displayTitle, selectedQuality)}
+                  <a
+                    href={`/api/download?url=${encodeURIComponent(activeUrl)}&title=${encodeURIComponent(displayTitle)}&quality=${encodeURIComponent(selectedQuality)}`}
+                    download={`${displayTitle.replace(/[^a-zA-Z0-9]/g, '_')}_${selectedQuality}_Turbo.mp4`}
                     className="flex-1 py-3 bg-amber-500 hover:bg-amber-400 text-zinc-950 font-extrabold text-xs rounded-2xl flex items-center justify-center space-x-2 shadow-lg shadow-amber-950/50"
                   >
                     <Download className="w-4 h-4 fill-zinc-950" />
-                    <span>{lang === 'rw' ? 'Ongera Umanure (Save Video MP4)' : 'Save Video File Again'}</span>
-                  </button>
+                    <span>{lang === 'rw' ? 'Manura MP4 Muri Telefoni (Save MP4 File)' : 'Save Video MP4 File'}</span>
+                  </a>
 
                   <a
                     href={activeUrl}
@@ -763,7 +745,7 @@ export const DownloadSpeedModal: React.FC<DownloadSpeedModalProps> = ({
                     className="flex-1 py-3 bg-zinc-800 hover:bg-zinc-700 text-white font-bold text-xs rounded-2xl flex items-center justify-center space-x-2 border border-zinc-700"
                   >
                     <ExternalLink className="w-4 h-4 text-amber-400" />
-                    <span>{lang === 'rw' ? 'Fungura Link ya Video' : 'Open Direct Video Stream'}</span>
+                    <span>{lang === 'rw' ? 'Fungura Source Link' : 'Open Source Link'}</span>
                   </a>
                 </div>
 

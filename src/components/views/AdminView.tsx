@@ -2618,44 +2618,60 @@ export const AdminView: React.FC<AdminViewProps> = ({ movies, onSelectMovie, onU
                 />
               </div>
 
-              {/* VIDEO STREAM / DOWNLOAD URL FIELD */}
+              {/* MULTI-SOURCE VIDEO STREAM / DOWNLOAD URL FIELD */}
               <div className="bg-gradient-to-r from-red-950/40 via-zinc-950 to-zinc-950 p-3.5 rounded-2xl border border-red-800/60 space-y-2">
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between flex-wrap gap-1">
                   <label className="font-bold text-red-400 flex items-center space-x-1.5">
                     <Video className="w-4 h-4 text-red-400" />
-                    <span>{lang === 'rw' ? 'Aho Video iherekeye (Video Stream / MP4 URL):' : 'Video Stream / Direct MP4 URL:'}</span>
+                    <span>{lang === 'rw' ? 'Isoko ya Video (Video Stream URL / Embed Link):' : 'Video Stream / Embed URL (Any Source):'}</span>
                   </label>
-                  <span className="text-[10px] text-zinc-400 font-mono">Direct MP4 / HLS / CDN</span>
+                  <span className="text-[10px] text-emerald-400 font-mono font-bold bg-emerald-950/80 px-2 py-0.5 rounded border border-emerald-800">
+                    Supports YouTube, Google Drive, Vimeo, MP4, Facebook, TikTok, Twitch, etc.
+                  </span>
                 </div>
                 <input
-                  type="url"
+                  type="text"
                   required
                   value={newVideoUrl}
                   onChange={(e) => setNewVideoUrl(e.target.value)}
-                  placeholder="https://commondatastorage.googleapis.com/.../movie.mp4"
+                  placeholder="Paste YouTube link, Google Drive URL, Vimeo, Direct MP4, Facebook, TikTok, or <iframe src='...'></iframe>"
                   className="w-full px-3.5 py-2.5 bg-zinc-950 border border-zinc-700 rounded-xl text-white focus:outline-none focus:border-red-500 font-mono text-[11px]"
                 />
                 <p className="text-[10px] text-zinc-400">
                   {lang === 'rw'
-                    ? 'Shyiramo link ya video (MP4, HLS stream, Google Cloud, web server cyangwa cloud CDN).'
-                    : 'Enter direct media link (MP4 file, HLS stream, Cloud Storage, or Web CDN endpoint).'}
+                    ? 'Shyiramo link ya video kuva aho ari ho hose: YouTube, Google Drive, Vimeo, Direct MP4, Facebook Video, TikTok, Twitch, Dailymotion, Rumble, OK.ru cyangwa iframe code.'
+                    : 'Paste video link from ANY platform: YouTube, Google Drive, Vimeo, Direct MP4/HLS, Facebook, TikTok, Twitch, Dailymotion, Rumble, OK.ru, or custom embed code.'}
                 </p>
                 {/* Sample URL presets */}
                 <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                  <span className="text-[10px] text-zinc-500">{lang === 'rw' ? 'Sample URLs:' : 'Sample links:'}</span>
+                  <span className="text-[10px] text-zinc-500">{lang === 'rw' ? 'Sample Stream Links:' : 'Sample links:'}</span>
                   <button
                     type="button"
                     onClick={() => setNewVideoUrl('https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4')}
-                    className="px-2 py-0.5 bg-zinc-800 hover:bg-zinc-700 text-amber-300 rounded font-mono text-[10px]"
+                    className="px-2 py-0.5 bg-zinc-800 hover:bg-zinc-700 text-emerald-300 rounded font-mono text-[10px]"
                   >
-                    Big Buck Bunny MP4
+                    Direct MP4
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setNewVideoUrl('https://www.youtube.com/watch?v=dQw4w9WgXcQ')}
+                    className="px-2 py-0.5 bg-zinc-800 hover:bg-zinc-700 text-red-300 rounded font-mono text-[10px]"
+                  >
+                    YouTube HD
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setNewVideoUrl('https://vimeo.com/76979871')}
+                    className="px-2 py-0.5 bg-zinc-800 hover:bg-zinc-700 text-sky-300 rounded font-mono text-[10px]"
+                  >
+                    Vimeo HD
                   </button>
                   <button
                     type="button"
                     onClick={() => setNewVideoUrl('https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4')}
                     className="px-2 py-0.5 bg-zinc-800 hover:bg-zinc-700 text-amber-300 rounded font-mono text-[10px]"
                   >
-                    Tears of Steel MP4
+                    CDN Mirror
                   </button>
                   <button
                     type="button"
@@ -2878,14 +2894,26 @@ export const AdminView: React.FC<AdminViewProps> = ({ movies, onSelectMovie, onU
                 />
               </div>
 
-              <div>
-                <label className="font-bold text-zinc-300 block mb-1">Video Stream/Trailer URL:</label>
+              <div className="bg-gradient-to-r from-amber-950/30 via-zinc-950 to-zinc-950 p-3 rounded-2xl border border-amber-800/40 space-y-1.5">
+                <div className="flex items-center justify-between flex-wrap gap-1">
+                  <label className="font-bold text-amber-300 text-xs flex items-center space-x-1">
+                    <Video className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Video Stream / Embed URL (Multi-Source):</span>
+                  </label>
+                  <span className="text-[10px] text-zinc-400 font-mono">
+                    Supports YouTube, Google Drive, Vimeo, MP4, Facebook, TikTok, Twitch, etc.
+                  </span>
+                </div>
                 <input
                   type="text"
                   value={editingMovie.videoUrl}
                   onChange={(e) => setEditingMovie({ ...editingMovie, videoUrl: e.target.value })}
+                  placeholder="Paste YouTube, Google Drive, Vimeo, Direct MP4, or embed code"
                   className="w-full px-3.5 py-2.5 bg-zinc-950 border border-zinc-700 rounded-xl text-white focus:outline-none focus:border-amber-400 font-mono text-[11px]"
                 />
+                <p className="text-[10px] text-zinc-400">
+                  You can paste links from YouTube, Google Drive, Vimeo, Facebook, TikTok, Twitch, Dailymotion, Rumble, OK.ru, Direct MP4/HLS, or iframe snippets.
+                </p>
               </div>
 
               <div>

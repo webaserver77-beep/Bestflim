@@ -110,64 +110,173 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ movie, allMovies, onBa
   const displayTitle = lang === 'rw' && movie.kinyarwandaTitle ? movie.kinyarwandaTitle : movie.title;
   const displayDescription = lang === 'rw' && movie.kinyarwandaDescription ? movie.kinyarwandaDescription : movie.description;
 
-  // Server Selector State
+  // Server Selector State & Multi-Platform Player Mode
   const [activeServer, setActiveServer] = useState<number>(1);
+  const [playerMode, setPlayerMode] = useState<'auto' | 'html5' | 'iframe'>('auto');
 
-  // Helper to extract embed links (YouTube, Vimeo, Google Drive, Dailymotion, Twitch, Streamable, OK.ru, Archive.org, etc.)
-  const getEmbedUrl = (url: string): string | null => {
-    if (!url) return null;
+  // Detect platform name for display
+  const getPlatformName = (url: string): { name: string; color: string; icon: string } => {
+    if (!url) return { name: 'Video Stream', color: 'bg-zinc-800 text-zinc-300', icon: '🎥' };
+    const u = url.toLowerCase();
     
-    // YouTube
-    const ytMatch = url.match(/(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=|shorts\/)|youtu\.be\/)([^"&?\/\s]{11})/);
+    if (u.includes('youtube.com') || u.includes('youtu.be')) return { name: 'YouTube HD Stream', color: 'bg-red-600/20 text-red-400 border-red-500/40', icon: '▶️' };
+    if (u.includes('drive.google.com')) return { name: 'Google Drive Stream', color: 'bg-blue-600/20 text-blue-400 border-blue-500/40', icon: '📁' };
+    if (u.includes('vimeo.com')) return { name: 'Vimeo Ultra HD', color: 'bg-sky-600/20 text-sky-400 border-sky-500/40', icon: '🎞️' };
+    if (u.includes('facebook.com') || u.includes('fb.watch')) return { name: 'Facebook Video', color: 'bg-indigo-600/20 text-indigo-400 border-indigo-500/40', icon: '🌐' };
+    if (u.includes('tiktok.com')) return { name: 'TikTok Stream', color: 'bg-pink-600/20 text-pink-400 border-pink-500/40', icon: '🎵' };
+    if (u.includes('twitch.tv')) return { name: 'Twitch Clip', color: 'bg-purple-600/20 text-purple-400 border-purple-500/40', icon: '👾' };
+    if (u.includes('dailymotion.com') || u.includes('dai.ly')) return { name: 'Dailymotion', color: 'bg-amber-600/20 text-amber-400 border-amber-500/40', icon: '⚡' };
+    if (u.includes('rumble.com')) return { name: 'Rumble Video', color: 'bg-emerald-600/20 text-emerald-400 border-emerald-500/40', icon: '🟢' };
+    if (u.includes('ok.ru')) return { name: 'OK.ru Video Stream', color: 'bg-amber-500/20 text-amber-300 border-amber-500/40', icon: '🟠' };
+    if (u.includes('archive.org')) return { name: 'Archive.org Cinema', color: 'bg-amber-700/20 text-amber-400 border-amber-600/40', icon: '🏛️' };
+    if (u.includes('streamable.com')) return { name: 'Streamable HD', color: 'bg-blue-500/20 text-blue-300 border-blue-400/40', icon: '⚡' };
+    if (u.includes('bilibili.com')) return { name: 'Bilibili Stream', color: 'bg-cyan-600/20 text-cyan-300 border-cyan-500/40', icon: '📺' };
+    if (u.includes('.mp4') || u.includes('.m3u8') || u.includes('.webm') || u.includes('commondatastorage')) {
+      return { name: 'Direct MP4 / CDN Fast Stream', color: 'bg-emerald-600/20 text-emerald-400 border-emerald-500/40', icon: '🚀' };
+    }
+    return { name: 'Universal Embedded Stream', color: 'bg-purple-600/20 text-purple-300 border-purple-500/40', icon: '🎬' };
+  };
+
+  // Universal Video Embed Link Extractor for ANY platform or custom link
+  const getEmbedUrl = (rawUrl: string): string | null => {
+    if (!rawUrl) return null;
+    let url = rawUrl.trim();
+
+    // 0. If user pasted iframe HTML string directly <iframe src="..."></iframe>
+    if (url.startsWith('<iframe') || url.includes('src=')) {
+      const srcMatch = url.match(/src=["']([^"']+)["']/);
+      if (srcMatch && srcMatch[1]) {
+        return srcMatch[1];
+      }
+    }
+
+    // Convert http to https for browser security iframe
+    if (url.startsWith('http://')) {
+      url = url.replace('http://', 'https://');
+    }
+
+    // 1. YouTube
+    const ytMatch = url.match(/(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=|shorts\/|live\/)|youtu\.be\/)([^"&?\/\s]{11})/);
     if (ytMatch && ytMatch[1]) {
       return `https://www.youtube.com/embed/${ytMatch[1]}?autoplay=1&rel=0&enablejsapi=1`;
     }
 
-    // Vimeo
+    // 2. Vimeo
     const vimeoMatch = url.match(/vimeo\.com\/(?:video\/)?([0-9]+)/);
     if (vimeoMatch && vimeoMatch[1]) {
       return `https://player.vimeo.com/video/${vimeoMatch[1]}?autoplay=1`;
     }
 
-    // Google Drive
+    // 3. Google Drive
     const driveMatch = url.match(/drive\.google\.com\/(?:file\/d\/|open\?id=)([a-zA-Z0-9_-]+)/);
     if (driveMatch && driveMatch[1]) {
       return `https://drive.google.com/file/d/${driveMatch[1]}/preview`;
     }
 
-    // Dailymotion
+    // 4. Dropbox (Convert view link to direct raw embed)
+    if (url.includes('dropbox.com')) {
+      return url.replace('dl=0', 'raw=1').replace('www.dropbox.com', 'dl.dropboxusercontent.com');
+    }
+
+    // 5. Dailymotion
     const dailyMatch = url.match(/(?:dailymotion\.com\/(?:video\/|embed\/video\/)|dai\.ly\/)([a-zA-Z0-9]+)/);
     if (dailyMatch && dailyMatch[1]) {
       return `https://www.dailymotion.com/embed/video/${dailyMatch[1]}?autoplay=1`;
     }
 
-    // Streamable
-    const streamableMatch = url.match(/streamable\.com\/(?:e\/)?([a-zA-Z0-9]+)/);
-    if (streamableMatch && streamableMatch[1]) {
-      return `https://streamable.com/e/${streamableMatch[1]}?autoplay=1`;
+    // 6. Facebook Video
+    if (url.includes('facebook.com') || url.includes('fb.watch')) {
+      return `https://www.facebook.com/plugins/video.php?href=${encodeURIComponent(url)}&show_text=0&autoplay=true`;
     }
 
-    // OK.ru
+    // 7. TikTok Video
+    const tiktokMatch = url.match(/tiktok\.com\/@[^\/]+\/video\/([0-9]+)/);
+    if (tiktokMatch && tiktokMatch[1]) {
+      return `https://www.tiktok.com/embed/v2/${tiktokMatch[1]}`;
+    }
+
+    // 8. Twitch Clip
+    const twitchClip = url.match(/clips\.twitch\.tv\/([a-zA-Z0-9_-]+)/);
+    if (twitchClip && twitchClip[1]) {
+      const hostname = typeof window !== 'undefined' ? window.location.hostname : 'localhost';
+      return `https://clips.twitch.tv/embed?clip=${twitchClip[1]}&parent=${hostname}`;
+    }
+
+    // 9. Rumble Video
+    if (url.includes('rumble.com')) {
+      if (url.includes('/embed/')) return url;
+      const rumbleMatch = url.match(/rumble\.com\/(v[a-zA-Z0-9_-]+)/);
+      if (rumbleMatch && rumbleMatch[1]) {
+        return `https://rumble.com/embed/${rumbleMatch[1]}/`;
+      }
+    }
+
+    // 10. Bilibili
+    const biliMatch = url.match(/bilibili\.com\/video\/(BV[a-zA-Z0-9]+)/);
+    if (biliMatch && biliMatch[1]) {
+      return `https://player.bilibili.com/player.html?bvid=${biliMatch[1]}&high_quality=1&danmaku=0`;
+    }
+
+    // 11. OK.ru
     const okMatch = url.match(/ok\.ru\/(?:video|videoembed)\/([0-9]+)/);
     if (okMatch && okMatch[1]) {
       return `https://ok.ru/videoembed/${okMatch[1]}`;
     }
 
-    // Archive.org
+    // 12. Archive.org
     const archiveMatch = url.match(/archive\.org\/(?:details|embed)\/([a-zA-Z0-9_-]+)/);
     if (archiveMatch && archiveMatch[1]) {
       return `https://archive.org/embed/${archiveMatch[1]}`;
     }
 
-    // Direct IFRAME or Embed URLs
-    if (url.includes('iframe') || (url.includes('/embed/') && !url.endsWith('.mp4') && !url.endsWith('.m3u8'))) {
+    // 13. Streamable
+    const streamableMatch = url.match(/streamable\.com\/(?:e\/)?([a-zA-Z0-9]+)/);
+    if (streamableMatch && streamableMatch[1]) {
+      return `https://streamable.com/e/${streamableMatch[1]}?autoplay=1`;
+    }
+
+    // 14. Loom
+    const loomMatch = url.match(/loom\.com\/(?:share|embed)\/([a-zA-Z0-9]+)/);
+    if (loomMatch && loomMatch[1]) {
+      return `https://www.loom.com/embed/${loomMatch[1]}`;
+    }
+
+    // 15. Direct MP4, HLS, WebM, Ogg files -> return null so HTML5 <video> renders directly
+    if (
+      url.endsWith('.mp4') ||
+      url.endsWith('.webm') ||
+      url.endsWith('.m3u8') ||
+      url.endsWith('.mov') ||
+      url.endsWith('.mkv') ||
+      url.endsWith('.ogg') ||
+      url.includes('.mp4?') ||
+      url.includes('commondatastorage.googleapis.com') ||
+      url.includes('cloudinary.com') ||
+      url.includes('firebasestorage')
+    ) {
+      return null;
+    }
+
+    // 16. Generic Embed / Web iFrame URLs
+    if (
+      url.includes('embed') ||
+      url.includes('iframe') ||
+      url.includes('player') ||
+      url.includes('view') ||
+      url.includes('plugin') ||
+      url.includes('watch')
+    ) {
       return url;
     }
 
     return null;
   };
 
-  const embedUrl = getEmbedUrl(activeVideoUrl);
+  const detectedEmbedUrl = getEmbedUrl(activeVideoUrl);
+  const platformInfo = getPlatformName(activeVideoUrl);
+
+  // Final determination whether to use iFrame or HTML5 Video
+  const isIframeMode = playerMode === 'iframe' || (playerMode === 'auto' && detectedEmbedUrl !== null);
 
   // Server switch handler
   const handleSelectServer = (serverNum: number) => {
@@ -192,7 +301,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ movie, allMovies, onBa
   // Attempt autoplay when video changes
   useEffect(() => {
     setVideoError(false);
-    if (videoRef.current && !embedUrl) {
+    if (videoRef.current && !isIframeMode) {
       videoRef.current.currentTime = 0;
       if (videoRef.current.readyState === 0) {
         videoRef.current.load();
@@ -209,7 +318,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ movie, allMovies, onBa
           });
       }
     }
-  }, [activeVideoUrl, embedUrl]);
+  }, [activeVideoUrl, isIframeMode]);
 
   // Track watch progress
   useEffect(() => {
@@ -367,32 +476,81 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ movie, allMovies, onBa
       {/* Main Video Player Canvas Container */}
       <div className="max-w-7xl mx-auto px-4 mb-8">
         
-        {/* Stream Server Selector Bar */}
-        <div className="mb-3 flex items-center justify-between flex-wrap gap-2 bg-zinc-900/90 border border-zinc-800 p-2 rounded-2xl">
-          <div className="flex items-center space-x-2 text-xs font-bold text-zinc-300 pl-2">
-            <Server className="w-4 h-4 text-red-500" />
-            <span>{lang === 'rw' ? 'Server ya Stream (Server Engine):' : 'Streaming Server:'}</span>
+        {/* Multi-Source Stream Bar & Platform Detector */}
+        <div className="mb-3 flex items-center justify-between flex-wrap gap-2 bg-zinc-900/90 border border-zinc-800 p-2.5 rounded-2xl">
+          <div className="flex items-center space-x-2 flex-wrap gap-y-1">
+            <div className="flex items-center space-x-1.5 text-xs font-bold text-zinc-300 pl-1">
+              <Server className="w-4 h-4 text-red-500" />
+              <span>{lang === 'rw' ? 'Isoko ya Stream:' : 'Stream Source:'}</span>
+            </div>
+
+            {/* Platform Tag */}
+            <span className={`inline-flex items-center space-x-1.5 px-3 py-1 rounded-xl text-xs font-black border ${platformInfo.color}`}>
+              <span>{platformInfo.icon}</span>
+              <span>{platformInfo.name}</span>
+            </span>
           </div>
 
-          <div className="flex items-center space-x-1 overflow-x-auto py-1">
-            {[
-              { num: 1, label: lang === 'rw' ? 'Server 1 (Primary HD)' : 'Server 1 (Primary)' },
-              { num: 2, label: lang === 'rw' ? 'Server 2 (Fast CDN)' : 'Server 2 (Fast CDN)' },
-              { num: 3, label: lang === 'rw' ? 'Server 3 (1080p Mirror)' : 'Server 3 (1080p Mirror)' },
-              { num: 4, label: lang === 'rw' ? 'Server 4 (Backup CDN)' : 'Server 4 (Backup)' },
-            ].map((srv) => (
+          <div className="flex items-center space-x-2 flex-wrap gap-y-1">
+            {/* Player Engine Switcher */}
+            <div className="flex items-center bg-zinc-950 p-1 rounded-xl border border-zinc-800 text-[11px] font-bold">
+              <span className="text-zinc-500 px-2 text-[10px] hidden sm:inline">{lang === 'rw' ? 'Player Engine:' : 'Engine:'}</span>
               <button
-                key={srv.num}
-                onClick={() => handleSelectServer(srv.num)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-extrabold transition-all whitespace-nowrap cursor-pointer ${
-                  activeServer === srv.num
-                    ? 'bg-red-600 text-white shadow-md shadow-red-950/80 scale-105'
-                    : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700'
+                type="button"
+                onClick={() => setPlayerMode('auto')}
+                className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                  playerMode === 'auto'
+                    ? 'bg-red-600 text-white font-extrabold shadow-sm'
+                    : 'text-zinc-400 hover:text-white'
                 }`}
               >
-                {srv.label}
+                Auto
               </button>
-            ))}
+              <button
+                type="button"
+                onClick={() => setPlayerMode('iframe')}
+                className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                  playerMode === 'iframe'
+                    ? 'bg-purple-600 text-white font-extrabold shadow-sm'
+                    : 'text-zinc-400 hover:text-white'
+                }`}
+              >
+                iFrame Embed
+              </button>
+              <button
+                type="button"
+                onClick={() => setPlayerMode('html5')}
+                className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                  playerMode === 'html5'
+                    ? 'bg-emerald-600 text-white font-extrabold shadow-sm'
+                    : 'text-zinc-400 hover:text-white'
+                }`}
+              >
+                HTML5 MP4
+              </button>
+            </div>
+
+            {/* Server Mirror Buttons */}
+            <div className="flex items-center space-x-1 overflow-x-auto py-0.5">
+              {[
+                { num: 1, label: lang === 'rw' ? 'Server 1 (Primary)' : 'Server 1' },
+                { num: 2, label: lang === 'rw' ? 'Server 2 (CDN)' : 'Server 2' },
+                { num: 3, label: lang === 'rw' ? 'Server 3 (1080p)' : 'Server 3' },
+                { num: 4, label: lang === 'rw' ? 'Server 4 (Backup)' : 'Server 4' },
+              ].map((srv) => (
+                <button
+                  key={srv.num}
+                  onClick={() => handleSelectServer(srv.num)}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-extrabold transition-all whitespace-nowrap cursor-pointer ${
+                    activeServer === srv.num
+                      ? 'bg-red-600 text-white shadow-md'
+                      : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700'
+                  }`}
+                >
+                  {srv.label}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
@@ -401,10 +559,10 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ movie, allMovies, onBa
           id="video-container"
           className="relative w-full aspect-video bg-black rounded-2xl overflow-hidden border border-zinc-800 shadow-2xl group"
         >
-          {embedUrl ? (
-            /* Embed IFRAME Player (YouTube, Vimeo, Google Drive, Dailymotion, Streamable, etc.) */
+          {isIframeMode ? (
+            /* Universal Embed IFRAME Player (YouTube, Vimeo, Google Drive, Facebook, TikTok, Dailymotion, Streamable, Rumble, OK.ru, Archive.org, etc.) */
             <iframe
-              src={embedUrl}
+              src={detectedEmbedUrl || activeVideoUrl}
               title={displayTitle}
               className="w-full h-full border-0"
               allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen"

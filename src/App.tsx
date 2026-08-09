@@ -8,6 +8,7 @@ import { Header } from './components/Header';
 import { MobileBottomNav } from './components/MobileBottomNav';
 import { LanguageModal } from './components/LanguageModal';
 import { NotificationsModal } from './components/NotificationsModal';
+import { NetworkDownloadBanner } from './components/NetworkDownloadBanner';
 import { HomeView } from './components/views/HomeView';
 import { SearchView } from './components/views/SearchView';
 import { HelpView } from './components/views/HelpView';
@@ -131,6 +132,9 @@ export function BestFilmsApp() {
       
       {/* First visit language prompt modal */}
       <LanguageModal />
+
+      {/* Network Connectivity & Download Auto-Resume Monitor */}
+      <NetworkDownloadBanner />
 
       {/* Movie Update & Addition Notifications Modal */}
       <NotificationsModal

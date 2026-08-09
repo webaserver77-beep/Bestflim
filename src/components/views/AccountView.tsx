@@ -8,7 +8,7 @@ import {
   User, ShieldAlert, Heart, Clock, History, ListPlus, LogIn, 
   UserPlus, LogOut, CheckCircle, Plus, Play, Sparkles, CreditCard,
   Calendar, Zap, Megaphone, ShieldCheck, Smartphone, Check, ArrowRight, X, AlertCircle,
-  Copy, Lock, PhoneCall, Send, Bell
+  Copy, Lock, PhoneCall, Send, Bell, Menu, ChevronDown
 } from 'lucide-react';
 
 import { getStoredSubPlans, getStoredPromoMode, getStoredPromoMessage } from '../../data/subscriptionPlans';
@@ -60,6 +60,7 @@ export const AccountView: React.FC<AccountViewProps> = ({
   }, []);
 
   const [activeSubTab, setActiveSubTab] = useState<'favorites' | 'watchLater' | 'history' | 'playlists' | 'subscription'>('subscription');
+  const [isAccountMenuOpen, setIsAccountMenuOpen] = useState<boolean>(false);
   const [showAuthModal, setShowAuthModal] = useState<boolean>(false);
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
   
@@ -501,72 +502,199 @@ export const AccountView: React.FC<AccountViewProps> = ({
         )}
       </div>
 
-      {/* Account Navigation Sub-tabs */}
-      <div className="flex space-x-2 border-b border-zinc-800 pb-2 overflow-x-auto">
-        <button
-          id="tab-subscription"
-          onClick={() => setActiveSubTab('subscription')}
-          className={`flex items-center space-x-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
-            activeSubTab === 'subscription'
-              ? 'bg-red-600 text-white shadow'
-              : 'text-zinc-400 hover:text-white hover:bg-zinc-900'
-          }`}
-        >
-          <CreditCard className="w-4 h-4" />
-          <span>{lang === 'rw' ? 'Ifatabuguzi & Kwamamaza' : 'Subscription & Pricing'}</span>
-        </button>
+      {/* Account Navigation Sub-tabs with 3-Bar Menu */}
+      <div className="relative border-b border-zinc-800 pb-3">
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <div className="flex items-center space-x-2 flex-wrap gap-y-2">
+            {/* 1. Subscription & Pricing Button - ALWAYS VISIBLE OUTSIDE */}
+            <button
+              id="tab-subscription"
+              onClick={() => {
+                setActiveSubTab('subscription');
+                setIsAccountMenuOpen(false);
+              }}
+              className={`flex items-center space-x-2 px-4 py-2.5 rounded-xl text-xs font-extrabold transition-all whitespace-nowrap cursor-pointer ${
+                activeSubTab === 'subscription'
+                  ? 'bg-red-600 text-white shadow-lg shadow-red-950/50 scale-102 ring-2 ring-red-500/50'
+                  : 'bg-zinc-900/90 text-zinc-300 hover:text-white hover:bg-zinc-800 border border-zinc-800'
+              }`}
+            >
+              <CreditCard className="w-4 h-4 text-amber-400" />
+              <span>{lang === 'rw' ? 'Ifatabuguzi & Kwamamaza' : 'Subscription & Pricing'}</span>
+            </button>
 
-        <button
-          id="tab-favorites"
-          onClick={() => setActiveSubTab('favorites')}
-          className={`flex items-center space-x-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
-            activeSubTab === 'favorites'
-              ? 'bg-red-600 text-white shadow'
-              : 'text-zinc-400 hover:text-white hover:bg-zinc-900'
-          }`}
-        >
-          <Heart className="w-4 h-4" />
-          <span>{t('myFavorites')} ({favoriteMovies.length})</span>
-        </button>
+            {/* If active tab is NOT subscription, show active tab indicator badge outside too */}
+            {activeSubTab !== 'subscription' && (
+              <div className="flex items-center space-x-2 px-3.5 py-2 rounded-xl text-xs font-extrabold bg-red-600 text-white shadow-md border border-red-500/40 animate-fadeIn">
+                {activeSubTab === 'favorites' && <Heart className="w-4 h-4 text-white" />}
+                {activeSubTab === 'watchLater' && <Clock className="w-4 h-4 text-white" />}
+                {activeSubTab === 'history' && <History className="w-4 h-4 text-white" />}
+                {activeSubTab === 'playlists' && <ListPlus className="w-4 h-4 text-white" />}
+                <span>
+                  {activeSubTab === 'favorites' && `${t('myFavorites')} (${favoriteMovies.length})`}
+                  {activeSubTab === 'watchLater' && `${t('myWatchLater')} (${watchLaterMovies.length})`}
+                  {activeSubTab === 'history' && `${t('myHistory')} (${historyItems.length})`}
+                  {activeSubTab === 'playlists' && `${t('myPlaylists')} (${user.playlists.length})`}
+                </span>
+              </div>
+            )}
+          </div>
 
-        <button
-          id="tab-watch-later"
-          onClick={() => setActiveSubTab('watchLater')}
-          className={`flex items-center space-x-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
-            activeSubTab === 'watchLater'
-              ? 'bg-red-600 text-white shadow'
-              : 'text-zinc-400 hover:text-white hover:bg-zinc-900'
-          }`}
-        >
-          <Clock className="w-4 h-4" />
-          <span>{t('myWatchLater')} ({watchLaterMovies.length})</span>
-        </button>
+          {/* 2. Three Bar Menu Button (Dropdown Toggle) */}
+          <button
+            id="account-three-bar-menu-btn"
+            onClick={() => setIsAccountMenuOpen(!isAccountMenuOpen)}
+            className={`flex items-center space-x-2 px-4 py-2.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer ${
+              isAccountMenuOpen
+                ? 'bg-amber-500 text-zinc-950 border border-amber-400 shadow-md scale-102'
+                : 'bg-zinc-900 hover:bg-zinc-800 text-zinc-200 border border-zinc-700/80 shadow-sm'
+            }`}
+          >
+            {isAccountMenuOpen ? (
+              <X className="w-4 h-4 text-zinc-950" />
+            ) : (
+              <Menu className="w-4 h-4 text-red-500" />
+            )}
+            <span>{lang === 'rw' ? 'Menu ya Konti' : 'Account Menu'}</span>
+            <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${isAccountMenuOpen ? 'rotate-180' : ''}`} />
+          </button>
+        </div>
 
-        <button
-          id="tab-history"
-          onClick={() => setActiveSubTab('history')}
-          className={`flex items-center space-x-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
-            activeSubTab === 'history'
-              ? 'bg-red-600 text-white shadow'
-              : 'text-zinc-400 hover:text-white hover:bg-zinc-900'
-          }`}
-        >
-          <History className="w-4 h-4" />
-          <span>{t('myHistory')} ({historyItems.length})</span>
-        </button>
+        {/* 3. Three Bar Dropdown Menu Panel */}
+        {isAccountMenuOpen && (
+          <>
+            {/* Backdrop for closing menu when clicking outside */}
+            <div 
+              className="fixed inset-0 z-20" 
+              onClick={() => setIsAccountMenuOpen(false)} 
+            />
 
-        <button
-          id="tab-playlists"
-          onClick={() => setActiveSubTab('playlists')}
-          className={`flex items-center space-x-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
-            activeSubTab === 'playlists'
-              ? 'bg-red-600 text-white shadow'
-              : 'text-zinc-400 hover:text-white hover:bg-zinc-900'
-          }`}
-        >
-          <ListPlus className="w-4 h-4" />
-          <span>{t('myPlaylists')} ({user.playlists.length})</span>
-        </button>
+            <div className="absolute right-0 top-14 z-30 w-72 bg-zinc-900/98 backdrop-blur-xl border border-zinc-700/80 rounded-2xl shadow-2xl p-2 space-y-1 animate-in fade-in slide-in-from-top-2 duration-150">
+              <div className="px-3 py-2 border-b border-zinc-800/80 flex items-center justify-between text-[11px] font-bold text-zinc-400 uppercase tracking-wider">
+                <span>{lang === 'rw' ? 'Hitamo Menu' : 'Select Section'}</span>
+                <span className="text-[10px] text-amber-400 bg-amber-950/60 border border-amber-800/40 px-1.5 py-0.5 rounded font-black">
+                  3-Bar
+                </span>
+              </div>
+
+              {/* Subscription Option inside 3-bar menu as requested */}
+              <button
+                id="menu-tab-subscription"
+                onClick={() => {
+                  setActiveSubTab('subscription');
+                  setIsAccountMenuOpen(false);
+                }}
+                className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  activeSubTab === 'subscription'
+                    ? 'bg-red-600 text-white font-extrabold shadow-md'
+                    : 'text-zinc-300 hover:bg-zinc-800 hover:text-white'
+                }`}
+              >
+                <div className="flex items-center space-x-2.5">
+                  <CreditCard className="w-4 h-4 text-amber-400" />
+                  <span>{lang === 'rw' ? 'Ifatabuguzi & Kwamamaza' : 'Subscription & Pricing'}</span>
+                </div>
+                {activeSubTab === 'subscription' && <Check className="w-4 h-4 text-white" />}
+              </button>
+
+              {/* Favorites Option */}
+              <button
+                id="menu-tab-favorites"
+                onClick={() => {
+                  setActiveSubTab('favorites');
+                  setIsAccountMenuOpen(false);
+                }}
+                className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  activeSubTab === 'favorites'
+                    ? 'bg-red-600 text-white font-extrabold shadow-md'
+                    : 'text-zinc-300 hover:bg-zinc-800 hover:text-white'
+                }`}
+              >
+                <div className="flex items-center space-x-2.5">
+                  <Heart className="w-4 h-4 text-red-400" />
+                  <span>{t('myFavorites')}</span>
+                </div>
+                <span className={`text-[10px] px-2 py-0.5 rounded-full font-black ${
+                  activeSubTab === 'favorites' ? 'bg-white/20 text-white' : 'bg-zinc-800 text-zinc-400'
+                }`}>
+                  {favoriteMovies.length}
+                </span>
+              </button>
+
+              {/* Watch Later Option */}
+              <button
+                id="menu-tab-watch-later"
+                onClick={() => {
+                  setActiveSubTab('watchLater');
+                  setIsAccountMenuOpen(false);
+                }}
+                className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  activeSubTab === 'watchLater'
+                    ? 'bg-red-600 text-white font-extrabold shadow-md'
+                    : 'text-zinc-300 hover:bg-zinc-800 hover:text-white'
+                }`}
+              >
+                <div className="flex items-center space-x-2.5">
+                  <Clock className="w-4 h-4 text-amber-400" />
+                  <span>{t('myWatchLater')}</span>
+                </div>
+                <span className={`text-[10px] px-2 py-0.5 rounded-full font-black ${
+                  activeSubTab === 'watchLater' ? 'bg-white/20 text-white' : 'bg-zinc-800 text-zinc-400'
+                }`}>
+                  {watchLaterMovies.length}
+                </span>
+              </button>
+
+              {/* Watch History Option */}
+              <button
+                id="menu-tab-history"
+                onClick={() => {
+                  setActiveSubTab('history');
+                  setIsAccountMenuOpen(false);
+                }}
+                className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  activeSubTab === 'history'
+                    ? 'bg-red-600 text-white font-extrabold shadow-md'
+                    : 'text-zinc-300 hover:bg-zinc-800 hover:text-white'
+                }`}
+              >
+                <div className="flex items-center space-x-2.5">
+                  <History className="w-4 h-4 text-blue-400" />
+                  <span>{t('myHistory')}</span>
+                </div>
+                <span className={`text-[10px] px-2 py-0.5 rounded-full font-black ${
+                  activeSubTab === 'history' ? 'bg-white/20 text-white' : 'bg-zinc-800 text-zinc-400'
+                }`}>
+                  {historyItems.length}
+                </span>
+              </button>
+
+              {/* Playlists Option */}
+              <button
+                id="menu-tab-playlists"
+                onClick={() => {
+                  setActiveSubTab('playlists');
+                  setIsAccountMenuOpen(false);
+                }}
+                className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  activeSubTab === 'playlists'
+                    ? 'bg-red-600 text-white font-extrabold shadow-md'
+                    : 'text-zinc-300 hover:bg-zinc-800 hover:text-white'
+                }`}
+              >
+                <div className="flex items-center space-x-2.5">
+                  <ListPlus className="w-4 h-4 text-emerald-400" />
+                  <span>{t('myPlaylists')}</span>
+                </div>
+                <span className={`text-[10px] px-2 py-0.5 rounded-full font-black ${
+                  activeSubTab === 'playlists' ? 'bg-white/20 text-white' : 'bg-zinc-800 text-zinc-400'
+                }`}>
+                  {user.playlists.length}
+                </span>
+              </button>
+            </div>
+          </>
+        )}
       </div>
 
       {/* 1. SUBSCRIPTION & PRICING TAB CONTENT */}
