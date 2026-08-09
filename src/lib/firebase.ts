@@ -13,6 +13,7 @@ import {
 } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 import { Movie, SupportMessage, PlatformAd } from '../types';
+import { MovieNotification, getStoredNotifications } from '../data/notifications';
 import { MOVIES_DATA } from '../data/movies';
 import { getStoredSupportMessages, getStoredAds } from '../data/adsAndMessages';
 
@@ -26,6 +27,7 @@ export const db = firebaseConfig.firestoreDatabaseId
 const MOVIES_COLLECTION = 'movies';
 const ADS_COLLECTION = 'ads';
 const MESSAGES_COLLECTION = 'support_messages';
+const NOTIFICATIONS_COLLECTION = 'notifications';
 
 let hasSeededMovies = false;
 
@@ -61,6 +63,15 @@ export async function seedFirestoreIfEmpty(): Promise<void> {
       const initialMsgs = getStoredSupportMessages();
       for (const msg of initialMsgs) {
         await setDoc(doc(db, MESSAGES_COLLECTION, msg.id), msg);
+      }
+    }
+
+    const notifSnap = await getDocs(collection(db, NOTIFICATIONS_COLLECTION));
+    if (notifSnap.empty) {
+      console.log('Seeding initial notifications to Firestore...');
+      const initialNotifs = getStoredNotifications();
+      for (const n of initialNotifs) {
+        await setDoc(doc(db, NOTIFICATIONS_COLLECTION, n.id), n);
       }
     }
   } catch (err) {
@@ -184,5 +195,40 @@ export async function updateSupportMessageInFirestore(id: string, updates: Parti
 
 export async function deleteSupportMessageFromFirestore(id: string): Promise<void> {
   const docRef = doc(db, MESSAGES_COLLECTION, id);
+  await deleteDoc(docRef);
+}
+
+// ------------------- NOTIFICATIONS CRUD -------------------
+export function subscribeNotifications(onData: (notifs: MovieNotification[]) => void, onError?: (err: any) => void) {
+  const colRef = collection(db, NOTIFICATIONS_COLLECTION);
+  return onSnapshot(
+    colRef,
+    (snapshot) => {
+      const items: MovieNotification[] = [];
+      snapshot.forEach((docSnap) => {
+        items.push({ id: docSnap.id, ...docSnap.data() } as MovieNotification);
+      });
+      if (items.length > 0) {
+        items.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        onData(items);
+      } else {
+        onData(getStoredNotifications());
+      }
+    },
+    (err) => {
+      console.error('Firestore subscribeNotifications error:', err);
+      if (onError) onError(err);
+      onData(getStoredNotifications());
+    }
+  );
+}
+
+export async function addNotificationToFirestore(notif: MovieNotification): Promise<void> {
+  const docRef = doc(db, NOTIFICATIONS_COLLECTION, notif.id);
+  await setDoc(docRef, notif);
+}
+
+export async function deleteNotificationFromFirestore(id: string): Promise<void> {
+  const docRef = doc(db, NOTIFICATIONS_COLLECTION, id);
   await deleteDoc(docRef);
 }

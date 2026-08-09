@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Movie } from './types';
 import { MOVIES_DATA } from './data/movies';
-import { seedFirestoreIfEmpty, subscribeMovies } from './lib/firebase';
+import { seedFirestoreIfEmpty, subscribeMovies, subscribeNotifications } from './lib/firebase';
 import { LanguageProvider } from './context/LanguageContext';
 import { AuthProvider } from './context/AuthContext';
 import { Header } from './components/Header';
@@ -17,7 +17,7 @@ import { AccountView } from './components/views/AccountView';
 import { AdminView } from './components/views/AdminView';
 import { VideoPlayer } from './components/VideoPlayer';
 import { getStoredPromoMode, getStoredPromoMessage } from './data/subscriptionPlans';
-import { getStoredNotifications } from './data/notifications';
+import { getStoredNotifications, saveNotifications } from './data/notifications';
 import { Sparkles } from 'lucide-react';
 
 export function BestFilmsApp() {
@@ -84,12 +84,30 @@ export function BestFilmsApp() {
   useEffect(() => {
     // Seed initial data to Firestore if empty and subscribe
     seedFirestoreIfEmpty();
-    const unsubscribe = subscribeMovies((fireMovies) => {
+    const unsubscribeMovies = subscribeMovies((fireMovies) => {
       if (fireMovies && fireMovies.length > 0) {
         setMovies(fireMovies);
       }
     });
-    return () => unsubscribe();
+
+    const unsubscribeNotifs = subscribeNotifications((fireNotifs) => {
+      if (fireNotifs && fireNotifs.length > 0) {
+        // preserve local read status if document matches local
+        const localNotifs = getStoredNotifications();
+        const readIds = new Set(localNotifs.filter(n => n.isRead).map(n => n.id));
+        const merged = fireNotifs.map(n => ({
+          ...n,
+          isRead: readIds.has(n.id) || n.isRead
+        }));
+        saveNotifications(merged);
+        setUnreadNotifCount(merged.filter(n => !n.isRead).length);
+      }
+    });
+
+    return () => {
+      unsubscribeMovies();
+      unsubscribeNotifs();
+    };
   }, []);
 
   useEffect(() => {

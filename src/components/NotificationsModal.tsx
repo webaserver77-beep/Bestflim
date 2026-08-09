@@ -147,9 +147,9 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({
                           className="w-12 h-16 rounded-xl object-cover border border-zinc-700 shadow-md"
                         />
                         <span className={`absolute -top-1.5 -left-1.5 px-1.5 py-0.5 rounded-md text-[9px] font-black uppercase text-white shadow ${
-                          isAdded ? 'bg-emerald-600' : 'bg-amber-600'
+                          notif.type === 'promo' ? 'bg-amber-600' : notif.type === 'broadcast' || notif.type === 'announcement' ? 'bg-red-600' : isAdded ? 'bg-emerald-600' : 'bg-blue-600'
                         }`}>
-                          {isAdded ? (lang === 'rw' ? 'NSHYA' : 'NEW') : (lang === 'rw' ? 'UPDATE' : 'UPDATED')}
+                          {notif.type === 'promo' ? 'PROMO' : notif.type === 'broadcast' || notif.type === 'announcement' ? 'ALERT' : isAdded ? (lang === 'rw' ? 'NSHYA' : 'NEW') : (lang === 'rw' ? 'UPDATE' : 'UPDATED')}
                         </span>
                       </div>
 

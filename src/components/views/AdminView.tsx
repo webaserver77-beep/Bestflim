@@ -4,7 +4,13 @@ import { useAuth } from '../../context/AuthContext';
 import { Movie, SupportMessage, PlatformAd, MovieAd } from '../../types';
 import { MovieAdsManager } from '../MovieAdsManager';
 import { SubPlan, getStoredSubPlans, saveSubPlans, getStoredPromoMode, getStoredPromoMessage, savePromoMode } from '../../data/subscriptionPlans';
-import { addMovieNotification } from '../../data/notifications';
+import { 
+  addMovieNotification, 
+  MovieNotification, 
+  getStoredNotifications, 
+  createAdminBroadcastNotification, 
+  deleteNotification 
+} from '../../data/notifications';
 import { copyToClipboard } from '../../utils/clipboard';
 import { 
   getStoredSupportMessages, saveSupportMessages, 
@@ -22,14 +28,16 @@ import {
   subscribeSupportMessages,
   addSupportMessageToFirestore,
   updateSupportMessageInFirestore,
-  deleteSupportMessageFromFirestore
+  deleteSupportMessageFromFirestore,
+  subscribeNotifications,
+  deleteNotificationFromFirestore
 } from '../../lib/firebase';
 import { 
   ShieldCheck, Lock, Smartphone, Zap, CheckCircle2, AlertCircle, 
   DollarSign, TrendingUp, Users, Film, Plus, Trash2, Edit3, 
   Key, RefreshCw, Send, Copy, Check, Eye, ChevronRight, Activity, Server,
   Download, Globe, Settings, Save, Search, Filter, HardDrive, BarChart3, Clock, ArrowUpRight,
-  Menu, X, MessageSquare, Megaphone, ExternalLink, Sparkles, MessageCircle, Video, Tv
+  Menu, X, MessageSquare, Megaphone, ExternalLink, Sparkles, MessageCircle, Video, Tv, Bell
 } from 'lucide-react';
 
 interface AdminViewProps {
@@ -138,8 +146,19 @@ export const AdminView: React.FC<AdminViewProps> = ({ movies, onSelectMovie, onU
   });
 
   // Main Admin Dashboard Sub-Tabs
-  const [adminTab, setAdminTab] = useState<'analytics' | 'momo' | 'content' | 'downloads' | 'pricing' | 'security' | 'feedback' | 'ads'>('analytics');
+  const [adminTab, setAdminTab] = useState<'analytics' | 'momo' | 'content' | 'downloads' | 'pricing' | 'notifications' | 'security' | 'feedback' | 'ads'>('analytics');
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState<boolean>(false);
+
+  // Broadcast Notifications State
+  const [broadcastNotifications, setBroadcastNotifications] = useState<MovieNotification[]>(getStoredNotifications);
+  const [notifTitle, setNotifTitle] = useState<string>('');
+  const [notifMsgRw, setNotifMsgRw] = useState<string>('');
+  const [notifMsgEn, setNotifMsgEn] = useState<string>('');
+  const [notifType, setNotifType] = useState<'broadcast' | 'announcement' | 'promo' | 'added' | 'updated'>('broadcast');
+  const [notifTargetAudience, setNotifTargetAudience] = useState<'all' | 'vip' | 'guests'>('all');
+  const [notifSelectedMovieId, setNotifSelectedMovieId] = useState<string>('');
+  const [notifToast, setNotifToast] = useState<string | null>(null);
+  const [isBroadcastingNotif, setIsBroadcastingNotif] = useState<boolean>(false);
 
   // Global Promotion Mode State
   const [isPromoActive, setIsPromoActive] = useState<boolean>(getStoredPromoMode);
@@ -231,11 +250,87 @@ export const AdminView: React.FC<AdminViewProps> = ({ movies, onSelectMovie, onU
     const unsubMsgs = subscribeSupportMessages((fireMsgs) => {
       if (fireMsgs && fireMsgs.length > 0) setSupportMessages(fireMsgs);
     });
+    const unsubNotifs = subscribeNotifications((fireNotifs) => {
+      if (fireNotifs && fireNotifs.length > 0) setBroadcastNotifications(fireNotifs);
+    });
     return () => {
       unsubAds();
       unsubMsgs();
+      unsubNotifs();
     };
   }, []);
+
+  // Broadcast Notification Actions
+  const handleSendBroadcastNotification = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!notifTitle.trim() || !notifMsgRw.trim()) return;
+
+    setIsBroadcastingNotif(true);
+
+    const matchedMovie = movies.find(m => m.id === notifSelectedMovieId);
+
+    const created = createAdminBroadcastNotification({
+      title: notifTitle.trim(),
+      message: notifMsgEn.trim() || notifMsgRw.trim(),
+      kinyarwandaMessage: notifMsgRw.trim(),
+      type: notifType,
+      movieId: matchedMovie?.id,
+      posterUrl: matchedMovie?.posterUrl,
+      targetAudience: notifTargetAudience,
+    });
+
+    setBroadcastNotifications(prev => [created, ...prev]);
+    setIsBroadcastingNotif(false);
+
+    setNotifToast(
+      lang === 'rw'
+        ? '📢 Ubutumwa bwohererejwe neza kubakoresha bose bazafite konti!'
+        : '📢 Broadcast notification sent to all user accounts successfully!'
+    );
+    setTimeout(() => setNotifToast(null), 4000);
+
+    // Reset form
+    setNotifTitle('');
+    setNotifMsgRw('');
+    setNotifMsgEn('');
+    setNotifSelectedMovieId('');
+  };
+
+  const handleDeleteBroadcastNotif = async (id: string) => {
+    deleteNotification(id);
+    setBroadcastNotifications(prev => prev.filter(n => n.id !== id));
+    try {
+      await deleteNotificationFromFirestore(id);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleApplyNotifTemplate = (templateKey: 'new_movie' | 'promo' | 'server' | 'announcement') => {
+    if (templateKey === 'new_movie') {
+      const topMovie = movies[0];
+      setNotifTitle(topMovie ? `🎬 Agasobanuye: ${topMovie.title}` : '🎬 Filme Nshya Muri Best Films!');
+      setNotifMsgRw(topMovie ? `Filme Nshya "${topMovie.title}" (Agasobanuye ka ${topMovie.interpreterName || 'Rocky'}) iraboneka ubu kureba no kumanura!` : 'Filme nshya yaguye iraboneka ubu kureba no kumanura HD!');
+      setNotifMsgEn(topMovie ? `New Movie "${topMovie.title}" (${topMovie.interpreterName || 'Rocky Kirabiranya'}) is now ready to stream & download!` : 'New movie update is now available to stream and download!');
+      setNotifType('added');
+      if (topMovie) setNotifSelectedMovieId(topMovie.id);
+    } else if (templateKey === 'promo') {
+      setNotifTitle('🎉 Promotion Nshya: Konti Zose Zafunguwe!');
+      setNotifMsgRw('Amakuru Meza! Uyu munsi filme zose n\'ibiyigize byafunguwe ku buntu ku bakoresha bose bari ku rubuga.');
+      setNotifMsgEn('Great News! All movies and download features are unlocked for free for all user accounts today.');
+      setNotifType('promo');
+    } else if (templateKey === 'server') {
+      setNotifTitle('⚡ Server Speed Boost & High Quality');
+      setNotifMsgRw('Umutekano n\'umuduko wo kumanura no kureba filme byaguye neza! Koresha MTN cyangwa Airtel 4G zose zizakora ku muvuduko wo hejuru.');
+      setNotifMsgEn('Server & download speeds updated! Fast 4K streaming and downloads are active for all users.');
+      setNotifType('announcement');
+    } else if (templateKey === 'announcement') {
+      setNotifTitle('📢 Amakuru Abaniwe Konti Zose (User Notice)');
+      setNotifMsgRw('Muraho! Turabashimira gukoresha Best Films Rwanda. Mufite ikibazo cyangwa ikigereranyo, twandikire muri Feedback.');
+      setNotifMsgEn('Hello! Thank you for using Best Films Rwanda. If you need any support, contact us via the Feedback tab.');
+      setNotifType('broadcast');
+    }
+  };
 
   // Support Message Actions
   const handleMarkMsgRead = async (id: string) => {
@@ -900,6 +995,14 @@ export const AdminView: React.FC<AdminViewProps> = ({ movies, onSelectMovie, onU
       icon: Settings,
       badge: '3 Plans',
       badgeColor: 'bg-indigo-950 text-indigo-400 border-indigo-800/60',
+    },
+    {
+      id: 'notifications',
+      labelEn: 'Broadcast Notifications',
+      labelRw: 'Oherereza Ubutumwa (Notifs)',
+      icon: Bell,
+      badge: `${broadcastNotifications.length} Sent`,
+      badgeColor: 'bg-red-950 text-red-400 border-red-800/60',
     },
     {
       id: 'feedback',
@@ -1906,6 +2009,345 @@ export const AdminView: React.FC<AdminViewProps> = ({ movies, onSelectMovie, onU
           </div>
         </div>
       </div>
+      )}
+
+      {/* TAB: BROADCAST NOTIFICATIONS TO ALL USERS */}
+      {adminTab === 'notifications' && (
+        <div className="space-y-6">
+          {/* Header Card */}
+          <div className="bg-gradient-to-r from-red-950/60 via-zinc-900 to-amber-950/40 border border-red-900/40 p-6 rounded-3xl shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="flex items-start space-x-4">
+              <div className="p-3 bg-red-600/20 text-red-400 rounded-2xl border border-red-500/30 flex-shrink-0">
+                <Bell className="w-7 h-7" />
+              </div>
+              <div className="space-y-1">
+                <div className="flex items-center space-x-2">
+                  <h3 className="font-black text-white text-lg sm:text-xl">
+                    {lang === 'rw' ? 'Yoherereza Ubutumwa Abakoresha Bose (Global Broadcast)' : 'Broadcast Notifications to All Users'}
+                  </h3>
+                  <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-red-500/20 text-red-300 border border-red-500/40 font-bold uppercase">
+                    Live Real-Time
+                  </span>
+                </div>
+                <p className="text-xs text-zinc-300 max-w-2xl">
+                  {lang === 'rw'
+                    ? 'Andika ubutumwa buzahita bugera ku bakoresha bose bafite konti kuri Best Films mu buryo bwihuse (Push Notification & Bell Alert).'
+                    : 'Compose and dispatch real-time notifications to every registered user account. Syncs across all devices instantly.'}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center space-x-2 bg-zinc-950/80 px-3 py-2 rounded-2xl border border-zinc-800">
+              <Users className="w-4 h-4 text-emerald-400" />
+              <span className="text-xs text-zinc-300 font-bold">
+                {lang === 'rw' ? 'Konti Zose Bari Kuri Network' : 'All Accounts Targeted'}
+              </span>
+            </div>
+          </div>
+
+          {/* Notification Toast Alert */}
+          {notifToast && (
+            <div className="p-4 rounded-2xl bg-emerald-950/90 border border-emerald-500/60 text-emerald-300 text-sm font-bold flex items-center space-x-3 shadow-xl animate-fadeIn">
+              <CheckCircle2 className="w-5 h-5 text-emerald-400 flex-shrink-0" />
+              <span>{notifToast}</span>
+            </div>
+          )}
+
+          {/* Quick Preset Templates Bar */}
+          <div className="bg-zinc-900 border border-zinc-800 p-5 rounded-3xl space-y-3">
+            <h4 className="text-xs font-bold text-zinc-400 uppercase tracking-wider flex items-center space-x-2">
+              <Sparkles className="w-4 h-4 text-amber-400" />
+              <span>{lang === 'rw' ? 'Inyandiko Ziteguye (Quick Broadcast Templates)' : 'Quick Broadcast Templates'}</span>
+            </h4>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+              <button
+                type="button"
+                onClick={() => handleApplyNotifTemplate('new_movie')}
+                className="p-3 bg-zinc-950 hover:bg-zinc-800 border border-zinc-800 hover:border-red-500/50 rounded-2xl text-left transition-all active:scale-95 group cursor-pointer"
+              >
+                <div className="font-bold text-white text-xs group-hover:text-red-400 flex items-center space-x-1.5">
+                  <Film className="w-3.5 h-3.5 text-red-500" />
+                  <span>🎬 New Agasobanuye</span>
+                </div>
+                <p className="text-[10px] text-zinc-400 mt-1 line-clamp-1">Filme Nshya ku rubuga</p>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleApplyNotifTemplate('promo')}
+                className="p-3 bg-zinc-950 hover:bg-zinc-800 border border-zinc-800 hover:border-amber-500/50 rounded-2xl text-left transition-all active:scale-95 group cursor-pointer"
+              >
+                <div className="font-bold text-white text-xs group-hover:text-amber-400 flex items-center space-x-1.5">
+                  <Zap className="w-3.5 h-3.5 text-amber-500" />
+                  <span>🎁 Free Promo Unlock</span>
+                </div>
+                <p className="text-[10px] text-zinc-400 mt-1 line-clamp-1">Konti zose zafunguwe</p>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleApplyNotifTemplate('server')}
+                className="p-3 bg-zinc-950 hover:bg-zinc-800 border border-zinc-800 hover:border-emerald-500/50 rounded-2xl text-left transition-all active:scale-95 group cursor-pointer"
+              >
+                <div className="font-bold text-white text-xs group-hover:text-emerald-400 flex items-center space-x-1.5">
+                  <Server className="w-3.5 h-3.5 text-emerald-500" />
+                  <span>⚡ Speed & Quality Boost</span>
+                </div>
+                <p className="text-[10px] text-zinc-400 mt-1 line-clamp-1">Umutekano n'umuduko 4K</p>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleApplyNotifTemplate('announcement')}
+                className="p-3 bg-zinc-950 hover:bg-zinc-800 border border-zinc-800 hover:border-blue-500/50 rounded-2xl text-left transition-all active:scale-95 group cursor-pointer"
+              >
+                <div className="font-bold text-white text-xs group-hover:text-blue-400 flex items-center space-x-1.5">
+                  <Megaphone className="w-3.5 h-3.5 text-blue-500" />
+                  <span>📢 User Announcement</span>
+                </div>
+                <p className="text-[10px] text-zinc-400 mt-1 line-clamp-1">Amakuru rusange</p>
+              </button>
+            </div>
+          </div>
+
+          {/* Form and Preview Grid */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            {/* Form Column */}
+            <form onSubmit={handleSendBroadcastNotification} className="lg:col-span-7 bg-zinc-900 border border-zinc-800 p-6 rounded-3xl space-y-5 shadow-xl">
+              <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
+                <h4 className="font-extrabold text-white text-base flex items-center space-x-2">
+                  <Send className="w-4 h-4 text-red-500" />
+                  <span>{lang === 'rw' ? 'Andika Ubutumwa Bwo Kwereka Abakoresha' : 'Compose Notification Message'}</span>
+                </h4>
+                <span className="text-xs text-red-400 font-bold bg-red-950/80 border border-red-800/60 px-2.5 py-0.5 rounded-full">
+                  Admin Broadcast
+                </span>
+              </div>
+
+              {/* Title Input */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-zinc-300">
+                  {lang === 'rw' ? 'Umutwe w\'Ubutumwa (Title)' : 'Notification Title'} <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. 🎬 Agasobanuye ka Rocky Kirabiranya Kashyizweho!"
+                  value={notifTitle}
+                  onChange={(e) => setNotifTitle(e.target.value)}
+                  className="w-full bg-zinc-950 border border-zinc-800 focus:border-red-500 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-zinc-500 outline-none transition-colors"
+                />
+              </div>
+
+              {/* Kinyarwanda Message */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-zinc-300">
+                  {lang === 'rw' ? 'Ubutumwa mu Kinyarwanda' : 'Kinyarwanda Message'} <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  rows={3}
+                  required
+                  placeholder="Andika ubutumwa abakoresha bose bazabona mu Kinyarwanda..."
+                  value={notifMsgRw}
+                  onChange={(e) => setNotifMsgRw(e.target.value)}
+                  className="w-full bg-zinc-950 border border-zinc-800 focus:border-red-500 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-zinc-500 outline-none transition-colors resize-none"
+                />
+              </div>
+
+              {/* English Message */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-zinc-300">
+                  {lang === 'rw' ? 'Ubutumwa mu Cyongereza (En Message - Optional)' : 'English Message (Optional)'}
+                </label>
+                <textarea
+                  rows={2}
+                  placeholder="Enter optional English translation for international users..."
+                  value={notifMsgEn}
+                  onChange={(e) => setNotifMsgEn(e.target.value)}
+                  className="w-full bg-zinc-950 border border-zinc-800 focus:border-red-500 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-zinc-500 outline-none transition-colors resize-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
+                {/* Notification Type */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-zinc-300">
+                    {lang === 'rw' ? 'Ubwoko bw\'Ubutumwa (Type)' : 'Notification Type'}
+                  </label>
+                  <select
+                    value={notifType}
+                    onChange={(e) => setNotifType(e.target.value as any)}
+                    className="w-full bg-zinc-950 border border-zinc-800 focus:border-red-500 rounded-xl px-3 py-2.5 text-xs text-white outline-none cursor-pointer"
+                  >
+                    <option value="broadcast">📢 General Broadcast</option>
+                    <option value="added">🎬 New Movie Added</option>
+                    <option value="updated">🔄 Movie Quality Update</option>
+                    <option value="promo">🎁 Promotion / VIP Offer</option>
+                    <option value="announcement">⚡ System Announcement</option>
+                  </select>
+                </div>
+
+                {/* Target Audience */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-zinc-300">
+                    {lang === 'rw' ? 'Abo Bigenewe (Audience)' : 'Target Audience'}
+                  </label>
+                  <select
+                    value={notifTargetAudience}
+                    onChange={(e) => setNotifTargetAudience(e.target.value as any)}
+                    className="w-full bg-zinc-950 border border-zinc-800 focus:border-red-500 rounded-xl px-3 py-2.5 text-xs text-white outline-none cursor-pointer"
+                  >
+                    <option value="all">👥 All Accounts (Konti Zose)</option>
+                    <option value="vip">⭐ VIP Members Only</option>
+                    <option value="guests">👤 Guest Visitors</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Attach Movie (Optional) */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-zinc-300">
+                  {lang === 'rw' ? 'Ongeraho Filme Irebana Nabyo (Option)' : 'Attach Movie Link (Optional)'}
+                </label>
+                <select
+                  value={notifSelectedMovieId}
+                  onChange={(e) => setNotifSelectedMovieId(e.target.value)}
+                  className="w-full bg-zinc-950 border border-zinc-800 focus:border-red-500 rounded-xl px-3 py-2.5 text-xs text-white outline-none cursor-pointer"
+                >
+                  <option value="">-- No Movie Attached --</option>
+                  {movies.map(m => (
+                    <option key={m.id} value={m.id}>
+                      {m.title} ({m.interpreterName || 'Agasobanuye'})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Action Submit Button */}
+              <button
+                type="submit"
+                disabled={isBroadcastingNotif || !notifTitle.trim() || !notifMsgRw.trim()}
+                className="w-full py-3.5 rounded-2xl font-black bg-gradient-to-r from-red-600 via-amber-600 to-red-600 hover:from-red-500 hover:to-amber-500 text-white shadow-xl shadow-red-950/80 text-sm transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center space-x-2 cursor-pointer"
+              >
+                <Send className="w-4 h-4" />
+                <span>
+                  {isBroadcastingNotif
+                    ? (lang === 'rw' ? 'Bwohererezwa...' : 'Broadcasting...')
+                    : (lang === 'rw' ? 'Oherereza Ubutumwa Konti Zose (Send Broadcast)' : 'Send Broadcast Notification to All Users')}
+                </span>
+              </button>
+            </form>
+
+            {/* Live Preview & Stats */}
+            <div className="lg:col-span-5 space-y-4">
+              <div className="bg-zinc-900 border border-zinc-800 p-5 rounded-3xl space-y-4 shadow-xl">
+                <h4 className="font-extrabold text-white text-sm flex items-center space-x-2 border-b border-zinc-800 pb-2">
+                  <Eye className="w-4 h-4 text-amber-400" />
+                  <span>{lang === 'rw' ? 'Ikigereranyo Muri App (Live Preview)' : 'Live User Notification Preview'}</span>
+                </h4>
+
+                {/* Mock Phone Notification Box */}
+                <div className="bg-zinc-950 border border-red-500/40 rounded-2xl p-4 space-y-3 relative overflow-hidden shadow-2xl">
+                  <div className="flex items-start space-x-3">
+                    <div className="w-10 h-10 rounded-xl bg-red-600/20 border border-red-500/40 flex items-center justify-center text-red-500 flex-shrink-0">
+                      <Bell className="w-5 h-5 animate-pulse" />
+                    </div>
+                    <div className="space-y-1 flex-1 min-w-0">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-white text-xs truncate">
+                          {notifTitle || 'Best Films Rwanda Alert'}
+                        </span>
+                        <span className="text-[9px] text-zinc-500 font-mono">Just Now</span>
+                      </div>
+                      <p className="text-xs text-zinc-300 leading-relaxed line-clamp-3">
+                        {notifMsgRw || 'Ubutumwa bwawe buzagaragara hano mu buryo bweruye ku bakoresha bose...'}
+                      </p>
+                      {notifSelectedMovieId && (
+                        <div className="mt-2 pt-2 border-t border-zinc-800 flex items-center space-x-2 text-[10px] text-amber-400 font-bold">
+                          <Film className="w-3 h-3" />
+                          <span>Attached: {movies.find(m => m.id === notifSelectedMovieId)?.title}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-zinc-950 p-3 rounded-xl border border-zinc-800/80 space-y-1.5 text-[11px] text-zinc-400">
+                  <div className="flex justify-between">
+                    <span>Target Audience:</span>
+                    <span className="font-bold text-white uppercase">{notifTargetAudience} Accounts</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Delivery Channel:</span>
+                    <span className="font-bold text-emerald-400">Firestore + Web Push</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Account Status:</span>
+                    <span className="font-bold text-blue-400">Real-Time Sync</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* History of Sent Broadcast Notifications */}
+          <div className="bg-zinc-900 border border-zinc-800 p-6 rounded-3xl space-y-4 shadow-xl">
+            <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
+              <h4 className="font-extrabold text-white text-base flex items-center space-x-2">
+                <Clock className="w-4 h-4 text-amber-400" />
+                <span>{lang === 'rw' ? 'Ubutumwa Bwohererejwe Bwose (Sent Notifications History)' : 'Sent Notifications History'}</span>
+              </h4>
+              <span className="text-xs font-bold text-zinc-400 bg-zinc-950 px-3 py-1 rounded-full border border-zinc-800">
+                {broadcastNotifications.length} Total
+              </span>
+            </div>
+
+            {broadcastNotifications.length === 0 ? (
+              <div className="py-8 text-center text-zinc-500 text-xs">
+                No notifications broadcasted yet. Compose your first message above!
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {broadcastNotifications.map((notif) => (
+                  <div key={notif.id} className="bg-zinc-950 border border-zinc-800 rounded-2xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:border-zinc-700 transition-colors">
+                    <div className="flex items-start space-x-3">
+                      <div className="w-10 h-10 rounded-xl bg-zinc-900 border border-zinc-800 flex items-center justify-center text-amber-400 flex-shrink-0 mt-0.5">
+                        {notif.type === 'promo' ? <Zap className="w-5 h-5 text-amber-400" /> : <Bell className="w-5 h-5 text-red-500" />}
+                      </div>
+                      <div className="space-y-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="font-black text-white text-sm">{notif.movieTitle}</span>
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-zinc-900 text-amber-400 font-bold border border-zinc-800 uppercase">
+                            {notif.type}
+                          </span>
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-950 text-blue-400 font-bold border border-blue-800/60 uppercase">
+                            Audience: {notif.targetAudience || 'all'}
+                          </span>
+                        </div>
+                        <p className="text-xs text-zinc-300">{notif.kinyarwandaMessage}</p>
+                        {notif.message !== notif.kinyarwandaMessage && (
+                          <p className="text-[11px] text-zinc-500 italic">{notif.message}</p>
+                        )}
+                        <p className="text-[10px] text-zinc-500 pt-1">
+                          📅 Sent: {new Date(notif.createdAt).toLocaleString()} {notif.author ? `• By: ${notif.author}` : ''}
+                        </p>
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={() => handleDeleteBroadcastNotif(notif.id)}
+                      className="p-2.5 bg-red-950/60 hover:bg-red-900 text-red-400 hover:text-white rounded-xl border border-red-800/60 transition-colors flex items-center space-x-1.5 text-xs font-bold self-end md:self-center cursor-pointer"
+                      title="Delete Notification"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Delete</span>
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
       )}
 
       {/* TAB 6: ADMIN SECURITY & PASSCODE CHANGE */}
