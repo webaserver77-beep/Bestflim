@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { Movie, Episode, MoviePart } from '../types';
+import { Movie, Episode, MoviePart, MovieAd } from '../types';
 import { useLanguage } from '../context/LanguageContext';
 import { useAuth } from '../context/AuthContext';
 import { MovieCard } from './MovieCard';
@@ -8,7 +8,8 @@ import { copyToClipboard } from '../utils/clipboard';
 import { 
   Play, Pause, Volume2, VolumeX, Maximize, RotateCcw, RotateCw, 
   Settings, Clock, Heart, Share2, ArrowLeft, Star, Subtitles, 
-  Check, Volume1, Film, Tv, Sparkles, Download, Zap, Layers, ListVideo, Server
+  Check, Volume1, Film, Tv, Sparkles, Download, Zap, Layers, ListVideo, Server,
+  Megaphone, SkipForward, ExternalLink
 } from 'lucide-react';
 
 interface VideoPlayerProps {
@@ -64,6 +65,62 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ movie, allMovies, onBa
   const [volume, setVolume] = useState<number>(1);
   const [isMuted, setIsMuted] = useState<boolean>(false);
   const [playbackSpeed, setPlaybackSpeed] = useState<number>(1);
+
+  // Video Ads Engine State
+  const [activeAd, setActiveAd] = useState<MovieAd | null>(null);
+  const [isAdPlaying, setIsAdPlaying] = useState<boolean>(false);
+  const [adSkipCountdown, setAdSkipCountdown] = useState<number>(5);
+  const [canSkipAd, setCanSkipAd] = useState<boolean>(false);
+  const [playedAdIds, setPlayedAdIds] = useState<Set<string>>(new Set());
+  const adVideoRef = useRef<HTMLVideoElement>(null);
+
+  const movieAds = useMemo(() => {
+    return movie.ads || [];
+  }, [movie.ads]);
+
+  // Handle initial preroll ad when movie is loaded or changes - disabled auto-blocking black screen overlay
+  useEffect(() => {
+    setPlayedAdIds(new Set());
+    setActiveAd(null);
+    setIsAdPlaying(false);
+  }, [movie.id, activeVideoUrl, movie.ads]);
+
+  // Skip countdown interval
+  useEffect(() => {
+    let timer: any = null;
+    if (isAdPlaying && activeAd) {
+      if (adSkipCountdown > 0) {
+        timer = setTimeout(() => {
+          setAdSkipCountdown((prev) => {
+            if (prev <= 1) {
+              setCanSkipAd(true);
+              return 0;
+            }
+            return prev - 1;
+          });
+        }, 1000);
+      } else {
+        setCanSkipAd(true);
+      }
+    }
+    return () => {
+      if (timer) clearTimeout(timer);
+    };
+  }, [isAdPlaying, activeAd, adSkipCountdown]);
+
+  const handleFinishAd = () => {
+    if (activeAd) {
+      setPlayedAdIds((prev) => new Set(prev).add(activeAd.id));
+    }
+    setIsAdPlaying(false);
+    setActiveAd(null);
+
+    // Resume main video
+    if (videoRef.current) {
+      videoRef.current.play().catch((err) => console.log('Resume main video after ad:', err));
+      setIsPlaying(true);
+    }
+  };
   
   // Settings dropdowns
   const [audioTrack, setAudioTrack] = useState<'original' | 'agasobanuye'>(
@@ -363,8 +420,44 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ movie, allMovies, onBa
 
   const handleTimeUpdate = () => {
     if (videoRef.current) {
-      setCurrentTime(videoRef.current.currentTime);
+      const curTime = videoRef.current.currentTime;
+      setCurrentTime(curTime);
       setDuration(videoRef.current.duration || 0);
+
+      // Check for midroll ads
+      if (!isAdPlaying && movieAds.length > 0) {
+        const midroll = movieAds.find(
+          (a) =>
+            a.placement === 'midroll' &&
+            a.midrollTimestamp !== undefined &&
+            Math.abs(curTime - a.midrollTimestamp) <= 1.2 &&
+            !playedAdIds.has(a.id)
+        );
+
+        if (midroll) {
+          videoRef.current.pause();
+          setIsPlaying(false);
+          setPlayedAdIds((prev) => new Set(prev).add(midroll.id));
+          setActiveAd(midroll);
+          setIsAdPlaying(true);
+          const delay = midroll.skipAfterSeconds !== undefined ? midroll.skipAfterSeconds : 5;
+          setAdSkipCountdown(delay);
+          setCanSkipAd(delay <= 0);
+        }
+      }
+    }
+  };
+
+  const handleMainVideoEnded = () => {
+    setIsPlaying(false);
+    const postroll = movieAds.find((a) => a.placement === 'postroll' && !playedAdIds.has(a.id));
+    if (postroll) {
+      setPlayedAdIds((prev) => new Set(prev).add(postroll.id));
+      setActiveAd(postroll);
+      setIsAdPlaying(true);
+      const delay = postroll.skipAfterSeconds !== undefined ? postroll.skipAfterSeconds : 5;
+      setAdSkipCountdown(delay);
+      setCanSkipAd(delay <= 0);
     }
   };
 
@@ -559,6 +652,58 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ movie, allMovies, onBa
           id="video-container"
           className="relative w-full aspect-video bg-black rounded-2xl overflow-hidden border border-zinc-800 shadow-2xl group"
         >
+          {/* ACTIVE VIDEO AD OVERLAY ENGINE */}
+          {isAdPlaying && activeAd && (
+            <div className="absolute inset-0 bg-black z-50 flex flex-col justify-between animate-fadeIn">
+              {/* Video element for Ad */}
+              <video
+                ref={adVideoRef}
+                src={activeAd.videoUrl}
+                autoPlay
+                playsInline
+                onEnded={handleFinishAd}
+                className="w-full h-full object-contain"
+              />
+
+              {/* Top Header of Ad Overlay */}
+              <div className="absolute top-4 left-4 right-4 flex items-center justify-between z-10 pointer-events-auto">
+                <div className="flex items-center space-x-2 bg-zinc-950/90 backdrop-blur-md px-3.5 py-1.5 rounded-xl border border-amber-500/50 text-amber-400 font-extrabold text-xs shadow-2xl">
+                  <Megaphone className="w-4 h-4 text-amber-400 animate-bounce" />
+                  <span>Injangwe y'Anonsi (Ad) • {activeAd.advertiserName || activeAd.title}</span>
+                </div>
+
+                {activeAd.targetUrl && (
+                  <a
+                    href={activeAd.targetUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center space-x-1.5 bg-blue-600 hover:bg-blue-500 text-white px-3.5 py-1.5 rounded-xl font-bold text-xs transition-colors shadow-lg"
+                  >
+                    <span>Sura Advertiser</span>
+                    <ExternalLink className="w-3.5 h-3.5" />
+                  </a>
+                )}
+              </div>
+
+              {/* Bottom Control / Skip Ad Button */}
+              <div className="absolute bottom-6 right-6 z-10 pointer-events-auto">
+                {canSkipAd ? (
+                  <button
+                    onClick={handleFinishAd}
+                    className="flex items-center space-x-2 bg-amber-500 hover:bg-amber-400 text-zinc-950 font-black text-xs md:text-sm px-5 py-2.5 rounded-2xl shadow-2xl transition-all transform hover:scale-105 cursor-pointer animate-pulse"
+                  >
+                    <span>Simbuka Ad (Skip Ad)</span>
+                    <SkipForward className="w-4 h-4 fill-zinc-950 text-zinc-950" />
+                  </button>
+                ) : (
+                  <div className="bg-zinc-950/90 text-zinc-200 font-mono text-xs px-4 py-2 rounded-xl border border-zinc-700 shadow-xl">
+                    Ushobora gusimbuka anonsi mu masagonda {adSkipCountdown}s...
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           {isIframeMode ? (
             /* Universal Embed IFRAME Player (YouTube, Vimeo, Google Drive, Facebook, TikTok, Dailymotion, Streamable, Rumble, OK.ru, Archive.org, etc.) */
             <iframe
@@ -591,7 +736,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ movie, allMovies, onBa
                   setIsPlaying(false);
                 }}
                 onTimeUpdate={handleTimeUpdate}
-                onEnded={() => setIsPlaying(false)}
+                onEnded={handleMainVideoEnded}
                 className="w-full h-full object-contain cursor-pointer"
                 onClick={togglePlay}
               />
@@ -894,15 +1039,32 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ movie, allMovies, onBa
                   {/* Progress Slider Bar */}
                   <div className="flex items-center space-x-3 text-xs font-mono font-bold text-zinc-300">
                     <span>{formatTime(currentTime)}</span>
-                    <input
-                      type="range"
-                      min="0"
-                      max={duration || 100}
-                      step="0.1"
-                      value={currentTime}
-                      onChange={handleSeek}
-                      className="w-full accent-red-600 h-1.5 bg-zinc-700 rounded-lg cursor-pointer"
-                    />
+                    <div className="relative w-full flex items-center">
+                      <input
+                        type="range"
+                        min="0"
+                        max={duration || 100}
+                        step="0.1"
+                        value={currentTime}
+                        onChange={handleSeek}
+                        className="w-full accent-red-600 h-1.5 bg-zinc-700 rounded-lg cursor-pointer"
+                      />
+                      {/* Midroll Ad Yellow Indicators */}
+                      {duration > 0 &&
+                        movieAds
+                          .filter((a) => a.placement === 'midroll' && a.midrollTimestamp !== undefined)
+                          .map((ad) => {
+                            const leftPct = Math.min(100, Math.max(0, ((ad.midrollTimestamp || 0) / duration) * 100));
+                            return (
+                              <div
+                                key={ad.id}
+                                title={`Ad: ${ad.title} (${formatTime(ad.midrollTimestamp || 0)})`}
+                                style={{ left: `${leftPct}%` }}
+                                className="absolute top-1/2 -translate-y-1/2 w-2 h-3 bg-amber-400 rounded-sm pointer-events-none shadow-md z-10 border border-black/30"
+                              />
+                            );
+                          })}
+                    </div>
                     <span>{formatTime(duration)}</span>
                   </div>
 

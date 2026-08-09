@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useLanguage } from '../../context/LanguageContext';
 import { useAuth } from '../../context/AuthContext';
-import { Movie, SupportMessage, PlatformAd } from '../../types';
+import { Movie, SupportMessage, PlatformAd, MovieAd } from '../../types';
+import { MovieAdsManager } from '../MovieAdsManager';
 import { SubPlan, getStoredSubPlans, saveSubPlans, getStoredPromoMode, getStoredPromoMessage, savePromoMode } from '../../data/subscriptionPlans';
 import { addMovieNotification } from '../../data/notifications';
 import { copyToClipboard } from '../../utils/clipboard';
@@ -388,6 +389,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ movies, onSelectMovie, onU
   const [newDescription, setNewDescription] = useState<string>('');
   const [newRuntime, setNewRuntime] = useState<string>('1h 45m');
   const [newType, setNewType] = useState<'movie' | 'series'>('movie');
+  const [newMovieAds, setNewMovieAds] = useState<MovieAd[]>([]);
 
   // Copy helper
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
@@ -608,6 +610,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ movies, onSelectMovie, onU
       isTrending: true,
       isFeatured: false,
       isNew: true,
+      ads: newMovieAds.length > 0 ? newMovieAds : undefined,
     };
 
     try {
@@ -634,6 +637,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ movies, onSelectMovie, onU
     setShowAddMovieModal(false);
     setNewTitle('');
     setNewDescription('');
+    setNewMovieAds([]);
     setNewVideoUrl('https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4');
   };
 
@@ -2766,6 +2770,9 @@ export const AdminView: React.FC<AdminViewProps> = ({ movies, onSelectMovie, onU
                 />
               </div>
 
+              {/* VIDEO ADS MANAGER FOR THIS MOVIE */}
+              <MovieAdsManager ads={newMovieAds} onChangeAds={setNewMovieAds} />
+
               <div className="flex space-x-3 pt-2">
                 <button
                   type="button"
@@ -2925,6 +2932,12 @@ export const AdminView: React.FC<AdminViewProps> = ({ movies, onSelectMovie, onU
                   className="w-full px-3.5 py-2 bg-zinc-950 border border-zinc-700 rounded-xl text-white focus:outline-none focus:border-amber-400"
                 />
               </div>
+
+              {/* VIDEO ADS MANAGER FOR EDITING MOVIE */}
+              <MovieAdsManager
+                ads={editingMovie.ads || []}
+                onChangeAds={(updatedAds) => setEditingMovie({ ...editingMovie, ads: updatedAds })}
+              />
 
               {/* Series Episodes & Seasons Quick Manager */}
               {editingMovie.type === 'series' && (

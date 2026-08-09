@@ -24,6 +24,35 @@ export const MOVIES_DATA: Movie[] = [
     isNew: true,
     isPopularInRwanda: true,
     franchiseName: 'Shadows of Kigali Saga',
+    ads: [
+      {
+        id: 'ad_m1_pre',
+        title: 'MTN MoMo Pay Promo Ad',
+        videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
+        placement: 'preroll',
+        skipAfterSeconds: 5,
+        advertiserName: 'MTN Mobile Money Rwanda',
+        targetUrl: 'https://www.mtn.co.rw',
+      },
+      {
+        id: 'ad_m1_mid',
+        title: 'Canal+ Rwanda Special Deal',
+        videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4',
+        placement: 'midroll',
+        midrollTimestamp: 15, // 15 seconds in for demo testing
+        skipAfterSeconds: 5,
+        advertiserName: 'Canal+ Rwanda',
+        targetUrl: 'https://www.canalplus.rw',
+      },
+      {
+        id: 'ad_m1_post',
+        title: 'Airtel 4G Ultra Speed Ad',
+        videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4',
+        placement: 'postroll',
+        skipAfterSeconds: 5,
+        advertiserName: 'Airtel Rwanda',
+      }
+    ],
     parts: [
       {
         id: 'm1_p1',

@@ -1,18 +1,24 @@
 import React, { useState, useEffect } from 'react';
-import { Smartphone, Download, Sparkles, X, CheckCircle2, ArrowDownCircle, ShieldCheck, Bell, FileText, ChevronRight } from 'lucide-react';
+import { Smartphone, Download, Sparkles, X, CheckCircle2, ArrowDownCircle, ShieldCheck, Bell, Share2, PlusSquare, Check } from 'lucide-react';
 import { useLanguage } from '../context/LanguageContext';
 import { requestPushNotificationPermission } from '../lib/pushNotifications';
 
 export const GetAppBanner: React.FC = () => {
   const { lang } = useLanguage();
   const [isDismissed, setIsDismissed] = useState<boolean>(false);
-  const [isDownloading, setIsDownloading] = useState<boolean>(false);
-  const [downloadSuccess, setDownloadSuccess] = useState<boolean>(false);
+  const [isInstalling, setIsInstalling] = useState<boolean>(false);
+  const [installSuccess, setInstallSuccess] = useState<boolean>(false);
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [pushEnabled, setPushEnabled] = useState<boolean>(false);
-  const [showGuideModal, setShowGuideModal] = useState<boolean>(false);
+  const [showInstallModal, setShowInstallModal] = useState<boolean>(false);
+  const [isStandalone, setIsStandalone] = useState<boolean>(false);
 
   useEffect(() => {
+    // Check if app is already running as an installed standalone app on home screen
+    if (window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone) {
+      setIsStandalone(true);
+    }
+
     // Listen for PWA install prompt
     const handleBeforeInstallPrompt = (e: Event) => {
       e.preventDefault();
@@ -24,53 +30,35 @@ export const GetAppBanner: React.FC = () => {
   }, []);
 
   const handleGetAppClick = async () => {
-    setIsDownloading(true);
-
-    // Request push notifications automatically as well
+    // Request push notifications permission automatically
     try {
       const granted = await requestPushNotificationPermission();
       if (granted) setPushEnabled(true);
     } catch (e) {
-      console.log('Push notification auto-request');
+      console.log('Push notification permission request');
     }
 
-    // 1. Trigger direct APK download immediately without any prompts/storage dialogs
-    try {
-      const apkUrl = `/api/download-apk?title=BestFilms_Mobile_App_v2.4`;
-      
-      // Create hidden link and trigger download instantly
-      const link = document.createElement('a');
-      link.href = apkUrl;
-      link.setAttribute('download', 'BestFilms_v2.4_Mobile.apk');
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-    } catch (err) {
-      console.error('APK direct download error:', err);
-    }
-
-    // 2. If browser supports PWA installation prompt, also invoke it
+    // If browser triggered PWA beforeinstallprompt event, invoke native OS installer!
     if (deferredPrompt) {
+      setIsInstalling(true);
       try {
         deferredPrompt.prompt();
         const choiceResult = await deferredPrompt.userChoice;
         if (choiceResult.outcome === 'accepted') {
-          console.log('User accepted PWA app installation');
+          setInstallSuccess(true);
+          setTimeout(() => setInstallSuccess(false), 5000);
         }
         setDeferredPrompt(null);
       } catch (e) {
-        console.log('PWA prompt skipped, APK download handled');
+        console.log('PWA installation prompt handling:', e);
+        setShowInstallModal(true);
+      } finally {
+        setIsInstalling(false);
       }
+    } else {
+      // Show interactive App Installation Modal with 1-click setup & instructions
+      setShowInstallModal(true);
     }
-
-    setDownloadSuccess(true);
-    setTimeout(() => {
-      setIsDownloading(false);
-    }, 2500);
-
-    setTimeout(() => {
-      setDownloadSuccess(false);
-    }, 6000);
   };
 
   const handlePushNotificationsClick = async () => {
@@ -83,18 +71,23 @@ export const GetAppBanner: React.FC = () => {
     }
   };
 
-  if (isDismissed) return null;
+  if (isDismissed || isStandalone) return null;
 
   return (
     <>
+      {/* Top Sticky Get App Banner */}
       <div className="sticky top-0 z-50 w-full bg-gradient-to-r from-red-700 via-red-600 to-amber-600 text-white shadow-xl border-b border-amber-400/50 animate-fadeIn">
         <div className="max-w-7xl mx-auto px-3 py-2 flex items-center justify-between gap-2">
           
-          {/* Left Side Info */}
-          <div className="flex items-center space-x-2.5 min-w-0">
+          {/* Left Side App Info */}
+          <div className="flex items-center space-x-2.5 min-w-0 cursor-pointer" onClick={() => setShowInstallModal(true)}>
             <div className="relative shrink-0">
-              <div className="w-8 h-8 rounded-lg bg-zinc-950/80 border border-amber-400/60 flex items-center justify-center shadow-inner">
-                <Smartphone className="w-5 h-5 text-amber-300 animate-pulse" />
+              <div className="w-8 h-8 rounded-lg bg-zinc-950/90 border border-amber-400 flex items-center justify-center shadow-md overflow-hidden">
+                <img 
+                  src="https://images.unsplash.com/photo-1536440136628-849c177e76a1?w=192&h=192&fit=crop&crop=faces" 
+                  alt="Best Films App Icon" 
+                  className="w-full h-full object-cover"
+                />
               </div>
               <span className="absolute -top-1 -right-1 flex h-3 w-3">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
@@ -105,16 +98,16 @@ export const GetAppBanner: React.FC = () => {
             <div className="min-w-0">
               <div className="flex items-center space-x-1.5">
                 <span className="font-black text-xs sm:text-sm tracking-tight text-white truncate">
-                  {lang === 'rw' ? 'Best Films App ya Mobile' : 'Best Films Mobile App'}
+                  {lang === 'rw' ? 'Best Films App' : 'Best Films Mobile App'}
                 </span>
                 <span className="bg-amber-400 text-zinc-950 font-black text-[9px] uppercase px-1.5 py-0.2 rounded-full tracking-wider shrink-0 shadow-sm">
-                  iOS & Android
+                  OFFICIAL APP
                 </span>
               </div>
               <p className="text-[10px] sm:text-xs text-amber-100/90 truncate hidden xs:block">
                 {lang === 'rw' 
-                  ? 'Yihuta 100%, irebe offline na video zidatinda' 
-                  : '100% Ultra fast WebView/APK, offline viewing & push notifications'}
+                  ? 'Shyira App ku gakoresho kawe (Home Screen) irebe nta interineti' 
+                  : 'Install App on your phone home screen for fast viewing'}
               </p>
             </div>
           </div>
@@ -138,44 +131,33 @@ export const GetAppBanner: React.FC = () => {
               </span>
             </button>
 
-            {/* Build Guide Modal Trigger */}
-            <button
-              type="button"
-              onClick={() => setShowGuideModal(true)}
-              className="p-1.5 rounded-full bg-black/30 hover:bg-black/50 border border-amber-300/60 text-amber-200 text-xs font-bold transition-all cursor-pointer hidden md:flex items-center space-x-1"
-              title="iOS & Android Publishing Guide"
-            >
-              <FileText className="w-3.5 h-3.5 text-amber-300" />
-              <span className="text-[10px]">App Store Setup</span>
-            </button>
-
-            {/* Main GET APP Button */}
+            {/* GET APP Main Installation Button */}
             <button
               id="btn-get-app-top-sticky"
               type="button"
               onClick={handleGetAppClick}
-              disabled={isDownloading}
+              disabled={isInstalling}
               className={`px-3.5 py-1.5 rounded-full font-black text-xs sm:text-sm flex items-center space-x-1.5 cursor-pointer transition-all transform active:scale-95 shadow-lg ${
-                downloadSuccess
+                installSuccess
                   ? 'bg-emerald-500 text-white shadow-emerald-900/50 ring-2 ring-emerald-300'
                   : 'bg-white hover:bg-amber-100 text-red-700 shadow-red-950/40 ring-2 ring-amber-300 hover:scale-105'
               }`}
             >
-              {isDownloading ? (
+              {isInstalling ? (
                 <>
                   <ArrowDownCircle className="w-4 h-4 text-red-700 animate-bounce" />
-                  <span>{lang === 'rw' ? 'Kumanura...' : 'Downloading...'}</span>
+                  <span>{lang === 'rw' ? 'Kushyiramo...' : 'Installing...'}</span>
                 </>
-              ) : downloadSuccess ? (
+              ) : installSuccess ? (
                 <>
                   <CheckCircle2 className="w-4 h-4 text-white" />
-                  <span>{lang === 'rw' ? 'Yarangiye!' : 'Downloaded!'}</span>
+                  <span>{lang === 'rw' ? 'Yashyizwe Muri Phone!' : 'App Installed!'}</span>
                 </>
               ) : (
                 <>
                   <Download className="w-4 h-4 text-red-700 animate-bounce" />
                   <span className="uppercase tracking-wider text-red-700 font-extrabold">
-                    {lang === 'rw' ? 'GET APP' : 'GET APP'}
+                    GET APP
                   </span>
                 </>
               )}
@@ -193,86 +175,121 @@ export const GetAppBanner: React.FC = () => {
           </div>
         </div>
 
-        {/* Download Alert Toast Notification */}
-        {downloadSuccess && (
+        {/* Success Banner Notice */}
+        {installSuccess && (
           <div className="bg-zinc-950 text-amber-300 border-t border-amber-500/50 text-[11px] font-bold px-4 py-1.5 flex items-center justify-center space-x-2 animate-fadeIn">
             <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
             <span>
               {lang === 'rw'
-                ? '🚀 Mobile App download started! Reba muri browser downloads kugirango uyishyiremo.'
-                : '🚀 Mobile App download started! Open your browser downloads to install BestFilms.apk'}
+                ? '🎉 Best Films App yashyizwe muri telefoni yawe neza! Ushobora kuyifungura ku mashusho ya Home Screen.'
+                : '🎉 Best Films App successfully installed on your device! You can launch it directly from your Home Screen.'}
             </span>
           </div>
         )}
       </div>
 
-      {/* Build & Packaging Guide Modal */}
-      {showGuideModal && (
+      {/* Interactive Mobile App Installation Modal */}
+      {showInstallModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-fadeIn">
-          <div className="w-full max-w-2xl bg-zinc-900 border border-zinc-800 rounded-2xl p-6 text-zinc-100 shadow-2xl max-h-[85vh] overflow-y-auto relative">
+          <div className="w-full max-w-md bg-zinc-900 border border-zinc-800 rounded-2xl p-6 text-zinc-100 shadow-2xl relative">
             <button
-              onClick={() => setShowGuideModal(false)}
+              onClick={() => setShowInstallModal(false)}
               className="absolute top-4 right-4 p-2 text-zinc-400 hover:text-white bg-zinc-800 hover:bg-zinc-700 rounded-full transition-colors cursor-pointer"
             >
               <X className="w-5 h-5" />
             </button>
 
-            <div className="flex items-center space-x-3 mb-4">
-              <div className="p-3 bg-red-600/20 text-red-500 rounded-xl border border-red-500/30">
-                <Smartphone className="w-6 h-6" />
+            {/* App Header */}
+            <div className="text-center space-y-3 mb-6">
+              <div className="w-20 h-20 mx-auto rounded-2xl bg-zinc-950 border-2 border-red-600 overflow-hidden shadow-2xl relative group">
+                <img 
+                  src="https://images.unsplash.com/photo-1536440136628-849c177e76a1?w=192&h=192&fit=crop&crop=faces" 
+                  alt="Best Films App" 
+                  className="w-full h-full object-cover"
+                />
               </div>
               <div>
-                <h3 className="text-xl font-black text-white">Cross-Platform Mobile App Guide</h3>
-                <p className="text-xs text-zinc-400">iOS & Android Capacitor / Play Store & App Store Publishing</p>
+                <h3 className="text-xl font-black text-white">
+                  {lang === 'rw' ? 'Shyira Best Films App Muri Telefoni' : 'Install Best Films Mobile App'}
+                </h3>
+                <p className="text-xs text-amber-400 font-semibold mt-1">
+                  {lang === 'rw' ? 'Muri Apps z\'agakoresho kawe (Home Screen)' : 'App icon on your Home Screen & App Launcher'}
+                </p>
               </div>
             </div>
 
-            <div className="space-y-4 text-sm text-zinc-300">
-              <div className="bg-zinc-950 p-4 rounded-xl border border-zinc-800 space-y-2">
-                <h4 className="font-bold text-amber-400 flex items-center space-x-2">
-                  <Sparkles className="w-4 h-4" />
-                  <span>1. Capacitor Native Wrapper Setup</span>
-                </h4>
-                <p className="text-xs text-zinc-400">Run these commands in your project directory:</p>
-                <pre className="bg-zinc-900 p-3 rounded-lg text-xs font-mono text-emerald-400 overflow-x-auto">
-{`npm install @capacitor/core @capacitor/cli @capacitor/android @capacitor/ios
-npx cap init "Best Films" "com.bestfilms.mobile" --web-dir "dist"
-npm run build
-npx cap add android
-npx cap add ios
-npx cap sync`}
-                </pre>
+            {/* Direct 1-Click Install Button if Prompt Ready */}
+            {deferredPrompt ? (
+              <button
+                type="button"
+                onClick={handleGetAppClick}
+                className="w-full py-3.5 px-4 bg-gradient-to-r from-red-600 to-amber-600 hover:from-red-500 hover:to-amber-500 text-white font-black rounded-xl shadow-lg flex items-center justify-center space-x-2 cursor-pointer transform active:scale-98 transition-all mb-4"
+              >
+                <Download className="w-5 h-5" />
+                <span>{lang === 'rw' ? 'Kanda hano Ushyiremo App Sura' : 'Tap Here to Install App Instantly'}</span>
+              </button>
+            ) : null}
+
+            {/* Installation Instructions for Android & iOS */}
+            <div className="space-y-3 text-xs text-zinc-300">
+              <div className="bg-zinc-950 p-3.5 rounded-xl border border-zinc-800 space-y-2">
+                <div className="flex items-center space-x-2 font-bold text-amber-300">
+                  <Check className="w-4 h-4 text-emerald-400" />
+                  <span>{lang === 'rw' ? 'Uburyo bwa Android / Chrome:' : 'For Android / Chrome Browser:'}</span>
+                </div>
+                <ol className="list-decimal list-inside space-y-1 text-zinc-400 text-[11px] pl-1">
+                  <li>
+                    {lang === 'rw' 
+                      ? 'Kanda ku dukpoint 3 twa browser (top-right menu ⋮)' 
+                      : 'Tap the 3 dots menu button (top-right ⋮)'}
+                  </li>
+                  <li>
+                    {lang === 'rw' 
+                      ? 'Hitamo "Add to Home screen" cyangwa "Install app"' 
+                      : 'Select "Add to Home screen" or "Install app"'}
+                  </li>
+                  <li>
+                    {lang === 'rw' 
+                      ? 'App ihita ijya mu zindi App zawe ku kio!' 
+                      : 'Best Films icon will appear directly in your local phone apps!'}
+                  </li>
+                </ol>
               </div>
 
-              <div className="bg-zinc-950 p-4 rounded-xl border border-zinc-800 space-y-2">
-                <h4 className="font-bold text-amber-400 flex items-center space-x-2">
-                  <Download className="w-4 h-4" />
-                  <span>2. Google Play Store & Android APK</span>
-                </h4>
-                <p className="text-xs text-zinc-400">
-                  Run <code className="text-amber-300 font-mono">npx cap open android</code> to launch Android Studio. Go to Build &gt; Generate Signed Bundle / APK to build production AAB for Google Play Store.
-                </p>
+              <div className="bg-zinc-950 p-3.5 rounded-xl border border-zinc-800 space-y-2">
+                <div className="flex items-center space-x-2 font-bold text-amber-300">
+                  <Share2 className="w-4 h-4 text-amber-400" />
+                  <span>{lang === 'rw' ? 'Uburyo bwa iPhone / iOS Safari:' : 'For iPhone / iOS Safari:'}</span>
+                </div>
+                <ol className="list-decimal list-inside space-y-1 text-zinc-400 text-[11px] pl-1">
+                  <li>
+                    {lang === 'rw' 
+                      ? 'Kanda ikimenyetso cya Share (⎘ ikirango cyo gusangira)' 
+                      : 'Tap the Share button at the bottom of Safari (⎘)'}
+                  </li>
+                  <li>
+                    {lang === 'rw' 
+                      ? 'Kina ushake "Add to Home Screen" (+)' 
+                      : 'Scroll down and tap "Add to Home Screen" (+)'}
+                  </li>
+                  <li>
+                    {lang === 'rw' 
+                      ? 'Kanda "Add". Best Films ihita iba App yawe!' 
+                      : 'Tap "Add". Best Films installs as an app on your iOS home screen!'}
+                  </li>
+                </ol>
               </div>
+            </div>
 
-              <div className="bg-zinc-950 p-4 rounded-xl border border-zinc-800 space-y-2">
-                <h4 className="font-bold text-amber-400 flex items-center space-x-2">
-                  <Smartphone className="w-4 h-4" />
-                  <span>3. Apple App Store & iOS IPA</span>
-                </h4>
-                <p className="text-xs text-zinc-400">
-                  Run <code className="text-amber-300 font-mono">npx cap open ios</code> on macOS to launch Xcode. Select your Developer account and archive the app for TestFlight & App Store distribution.
-                </p>
-              </div>
-
-              <div className="pt-2 flex justify-end">
-                <button
-                  type="button"
-                  onClick={() => setShowGuideModal(false)}
-                  className="px-5 py-2.5 bg-red-600 hover:bg-red-500 text-white font-bold rounded-xl transition-colors cursor-pointer"
-                >
-                  Close Guide
-                </button>
-              </div>
+            {/* Footer Close */}
+            <div className="mt-5 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setShowInstallModal(false)}
+                className="w-full py-2.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-bold rounded-xl text-xs transition-colors cursor-pointer"
+              >
+                {lang === 'rw' ? 'Funga' : 'Close'}
+              </button>
             </div>
           </div>
         </div>
@@ -280,4 +297,3 @@ npx cap sync`}
     </>
   );
 };
-

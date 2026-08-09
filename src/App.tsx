@@ -25,8 +25,7 @@ export function BestFilmsApp() {
     if (typeof window !== 'undefined') {
       const path = window.location.pathname.toLowerCase();
       const hash = window.location.hash.toLowerCase();
-      const search = window.location.search.toLowerCase();
-      if (path.includes('/weba') || hash.includes('weba') || search.includes('weba')) {
+      if (path.endsWith('/weba') || hash === '#weba') {
         return 'admin';
       }
     }
@@ -36,19 +35,17 @@ export function BestFilmsApp() {
   const [searchInitialQuery, setSearchInitialQuery] = useState<string>('');
   const [movies, setMovies] = useState<Movie[]>(MOVIES_DATA);
 
-  // Hidden Route Listener for /Weba or /weba
+  // Hidden Route Listener for explicit /weba or #weba route
   useEffect(() => {
     const handleLocationCheck = () => {
       if (typeof window !== 'undefined') {
         const path = window.location.pathname.toLowerCase();
         const hash = window.location.hash.toLowerCase();
-        const search = window.location.search.toLowerCase();
-        if (path.includes('/weba') || hash.includes('weba') || search.includes('weba')) {
+        if (path.endsWith('/weba') || hash === '#weba') {
           setActiveTab('admin');
         }
       }
     };
-    handleLocationCheck();
     window.addEventListener('popstate', handleLocationCheck);
     window.addEventListener('hashchange', handleLocationCheck);
     return () => {
@@ -248,12 +245,55 @@ export function BestFilmsApp() {
   );
 }
 
+class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean }> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error: any, errorInfo: any) {
+    console.error('App Error caught:', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen bg-zinc-950 text-white flex flex-col items-center justify-center p-6 text-center space-y-4">
+          <div className="w-16 h-16 rounded-full bg-red-600/20 text-red-500 border border-red-500/40 flex items-center justify-center font-bold text-2xl">
+            !
+          </div>
+          <h2 className="text-xl font-bold">Ibyakozwe Byafungutse Ngaruka</h2>
+          <p className="text-xs text-zinc-400 max-w-sm">
+            Kanda kuri buton iri hano hasi usubire ku rupapuro rw'itangiriro vuba bidatinze.
+          </p>
+          <button
+            onClick={() => {
+              this.setState({ hasError: false });
+              window.location.href = '/';
+            }}
+            className="px-6 py-2.5 bg-red-600 hover:bg-red-500 text-white text-xs font-bold rounded-xl shadow-lg cursor-pointer"
+          >
+            Subira ku Rukurikirane (Home)
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 export default function App() {
   return (
-    <LanguageProvider>
-      <AuthProvider>
-        <BestFilmsApp />
-      </AuthProvider>
-    </LanguageProvider>
+    <ErrorBoundary>
+      <LanguageProvider>
+        <AuthProvider>
+          <BestFilmsApp />
+        </AuthProvider>
+      </LanguageProvider>
+    </ErrorBoundary>
   );
 }

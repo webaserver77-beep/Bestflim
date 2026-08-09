@@ -1,23 +1,28 @@
 {
   "short_name": "Best Films",
   "name": "Best Films Mobile - Movies & Series",
-  "icons": [
-    {
-      "src": "https://images.unsplash.com/photo-1536440136628-849c177e76a1?w=192&h=192&fit=crop&crop=faces",
-      "type": "image/jpeg",
-      "sizes": "192x192"
-    },
-    {
-      "src": "https://images.unsplash.com/photo-1536440136628-849c177e76a1?w=512&h=512&fit=crop&crop=faces",
-      "type": "image/jpeg",
-      "sizes": "512x512"
-    }
-  ],
+  "id": "/",
   "start_url": "/",
   "background_color": "#09090b",
   "theme_color": "#dc2626",
   "display": "standalone",
   "orientation": "portrait",
   "scope": "/",
-  "description": "Watch and download full HD movies with Rwandan audio commentary offline."
+  "description": "Watch and download full HD movies with Rwandan audio commentary offline.",
+  "categories": ["entertainment", "movies"],
+  "icons": [
+    {
+      "src": "https://images.unsplash.com/photo-1536440136628-849c177e76a1?w=192&h=192&fit=crop&crop=faces",
+      "type": "image/jpeg",
+      "sizes": "192x192",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "https://images.unsplash.com/photo-1536440136628-849c177e76a1?w=512&h=512&fit=crop&crop=faces",
+      "type": "image/jpeg",
+      "sizes": "512x512",
+      "purpose": "any maskable"
+    }
+  ],
+  "prefer_related_applications": false
 }

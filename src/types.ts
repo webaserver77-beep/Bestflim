@@ -25,6 +25,17 @@ export interface MoviePart {
   thumbnailUrl?: string;
 }
 
+export interface MovieAd {
+  id: string;
+  title: string;
+  videoUrl: string;
+  placement: 'preroll' | 'midroll' | 'postroll';
+  midrollTimestamp?: number; // timestamp in seconds e.g. 120 for 2:00
+  skipAfterSeconds?: number; // default 5s
+  targetUrl?: string;
+  advertiserName?: string;
+}
+
 export interface Movie {
   id: string;
   title: string;
@@ -50,6 +61,7 @@ export interface Movie {
   episodes?: Episode[];
   parts?: MoviePart[];
   franchiseName?: string;
+  ads?: MovieAd[];
 }
 
 export interface SubscriptionPlan {
