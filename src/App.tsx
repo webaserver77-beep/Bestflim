@@ -9,6 +9,7 @@ import { MobileBottomNav } from './components/MobileBottomNav';
 import { LanguageModal } from './components/LanguageModal';
 import { NotificationsModal } from './components/NotificationsModal';
 import { NetworkDownloadBanner } from './components/NetworkDownloadBanner';
+import { GetAppBanner } from './components/GetAppBanner';
 import { HomeView } from './components/views/HomeView';
 import { SearchView } from './components/views/SearchView';
 import { HelpView } from './components/views/HelpView';
@@ -135,6 +136,9 @@ export function BestFilmsApp() {
 
       {/* Network Connectivity & Download Auto-Resume Monitor */}
       <NetworkDownloadBanner />
+
+      {/* Sticky Top "GET APP" Mobile Download Alert Banner */}
+      <GetAppBanner />
 
       {/* Movie Update & Addition Notifications Modal */}
       <NotificationsModal

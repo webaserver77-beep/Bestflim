@@ -1,0 +1,20 @@
+{
+  "appId": "com.bestfilms.mobile",
+  "appName": "Best Films",
+  "webDir": "dist",
+  "bundledWebRuntime": false,
+  "server": {
+    "androidScheme": "https",
+    "cleartext": true
+  },
+  "plugins": {
+    "PushNotifications": {
+      "presentationOptions": ["badge", "sound", "alert"]
+    },
+    "SplashScreen": {
+      "launchShowDuration": 2000,
+      "backgroundColor": "#09090b",
+      "showSpinner": false
+    }
+  }
+}
