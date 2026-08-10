@@ -28,24 +28,34 @@ async function startServer() {
   }
 
   // ==========================================
-  // MTN Mobile Money (MoMoPay) Collections API
+  // MTN Mobile Money (MoMo Collections) API - Production Rwanda
   // ==========================================
   interface MoMoTransaction {
     referenceId: string;
     phone: string;
     amount: number;
     currency: string;
-    merchantId: string;
+    externalId: string;
     planId?: string;
     planName?: string;
+    userId?: string;
     status: 'PENDING' | 'SUCCESSFUL' | 'FAILED';
-    ussdCode: string;
     createdAt: string;
     updatedAt: string;
+    completedAt?: string;
     financialTransactionId?: string;
+    failureReason?: string;
   }
 
   const momoTransactionsMap = new Map<string, MoMoTransaction>();
+
+  // Server-side source of truth for subscription plan pricing (protects against client amount manipulation)
+  const SERVER_PLAN_PRICES: Record<string, { price: number; name: string }> = {
+    'weekly_vip': { price: 500, name: 'VIP Stream Pass (1 Week)' },
+    'monthly_vip': { price: 2000, name: 'VIP Stream Pass (1 Month)' },
+    'annual_vip': { price: 15000, name: 'VIP Stream Pass (1 Year)' },
+    'ad_weekly': { price: 1000, name: 'Website Banner Ad Promotion' },
+  };
 
   // Normalize Rwandan phone numbers to 2507XXXXXXXX format
   function normalizeRwandaPhone(inputPhone: string): string {
@@ -62,149 +72,198 @@ async function startServer() {
     return cleaned;
   }
 
-  // Generate MTN MoMo OAuth2 Access Token if credentials exist
-  async function getMTNMoMoToken(): Promise<string | null> {
-    const subKey = process.env.MTN_MOMO_SUBSCRIPTION_KEY;
-    const apiUser = process.env.MTN_MOMO_API_USER;
-    const apiKey = process.env.MTN_MOMO_API_KEY;
-    const targetEnv = process.env.MTN_MOMO_TARGET_ENV || 'sandbox';
+  // Token cache to avoid requesting an OAuth token on every call
+  let cachedMTNToken: { token: string; expiresAt: number } | null = null;
 
-    if (!subKey || !apiUser || !apiKey) {
+  async function getMTNAccessToken(): Promise<string | null> {
+    if (cachedMTNToken && cachedMTNToken.expiresAt > Date.now()) {
+      return cachedMTNToken.token;
+    }
+
+    const apiUser = (process.env.MTN_API_USER || process.env.MTN_MOMO_API_USER || '').trim();
+    const apiKey = (process.env.MTN_API_KEY || process.env.MTN_MOMO_API_KEY || '').trim();
+    const subKey = (process.env.MTN_SUBSCRIPTION_KEY || process.env.MTN_MOMO_SUBSCRIPTION_KEY || '').trim();
+    const rawBaseUrl = process.env.MTN_API_BASE_URL || 'https://proxy.momoapi.mtn.com';
+    const baseUrl = rawBaseUrl.replace(/\/+$/, '');
+    const targetEnv = (process.env.MTN_TARGET_ENVIRONMENT || process.env.MTN_MOMO_TARGET_ENV || 'mtnrwanda').trim();
+
+    if (!apiUser || !apiKey || !subKey) {
+      console.warn('[MTN MoMo] Production credentials missing in environment variables.');
       return null;
     }
 
-    const host = targetEnv === 'sandbox' 
-      ? 'https://sandbox.momodeveloper.mtn.com' 
-      : 'https://proxy.momoapi.mtn.com';
+    // Check if credentials are placeholder strings
+    const isPlaceholder = (val: string) => 
+      val.includes('here') || val.includes('your_') || val.includes('dummy') || val.includes('MY_');
+
+    if (isPlaceholder(apiUser) || isPlaceholder(apiKey) || isPlaceholder(subKey)) {
+      console.warn('[MTN MoMo] Environment variables contain placeholder values. Enter real credentials in Vercel / environment settings.');
+      return null;
+    }
 
     const authHeader = 'Basic ' + Buffer.from(`${apiUser}:${apiKey}`).toString('base64');
 
     try {
-      const response = await fetch(`${host}/collection/token/`, {
+      const response = await fetch(`${baseUrl}/collection/token/`, {
         method: 'POST',
         headers: {
           'Authorization': authHeader,
           'Ocp-Apim-Subscription-Key': subKey,
+          'X-Target-Environment': targetEnv,
         },
       });
 
       if (!response.ok) {
-        console.error('MTN MoMo Token error status:', response.status);
+        console.error(`[MTN Token Error] Status: ${response.status}. Please verify MTN_API_USER, MTN_API_KEY, and MTN_SUBSCRIPTION_KEY credentials in Vercel / environment variables.`);
         return null;
       }
 
       const data = await response.json();
-      return data.access_token || null;
+      if (data.access_token) {
+        const expiresInMs = (data.expires_in || 3600) * 1000;
+        cachedMTNToken = {
+          token: data.access_token,
+          expiresAt: Date.now() + expiresInMs - 60000, // Refresh 1 min before expiration
+        };
+        return data.access_token;
+      }
+      return null;
     } catch (err) {
-      console.error('MTN MoMo Token fetch error:', err);
+      console.error('[MTN Token Exception]:', err);
       return null;
     }
   }
 
-  // Endpoint 1: Request to Pay (MoMoPay Collection)
-  app.post("/api/momo/request-to-pay", async (req, res) => {
+  // Core Request to Pay handler
+  async function handleRequestToPay(req: express.Request, res: express.Response) {
     try {
-      const { phone, amount, planId, planName } = req.body;
+      const { phone, planId, amount: reqAmount, planName: reqPlanName, userId } = req.body;
 
-      if (!phone || !amount || isNaN(Number(amount))) {
+      if (!phone) {
         return res.status(400).json({
           success: false,
           message: req.body.lang === 'rw' 
-            ? "Mwandikishe nimero ya telefoni n'amafaranga bikoze neza."
-            : "Please provide a valid phone number and amount.",
+            ? "Mwandikishe nimero ya telefoni."
+            : "Please provide a valid phone number.",
         });
       }
 
       const formattedPhone = normalizeRwandaPhone(phone.toString());
-      if (formattedPhone.length < 10) {
+      if (formattedPhone.length !== 12 || !formattedPhone.startsWith('2507')) {
         return res.status(400).json({
           success: false,
           message: req.body.lang === 'rw'
             ? "Nimero ya telefoni ntabwo yubahirije amabwiriza yo mu Rwanda (ex: 0788123456)."
-            : "Invalid Rwandan phone number format. Use format 078XXXXXXX or 2507XXXXXXXX.",
+            : "Invalid Rwandan phone number. Use 078XXXXXXX or 2507XXXXXXXX.",
         });
       }
 
-      const referenceId = crypto.randomUUID();
-      const merchantId = process.env.MTN_MOMO_MERCHANT_ID || '1461297';
-      const numAmount = Number(amount);
-      const ussdCode = `*182*8*1*${merchantId}*${numAmount}#`;
-      const targetEnv = process.env.MTN_MOMO_TARGET_ENV || 'sandbox';
+      // Server-side amount validation
+      let finalAmount = 2000;
+      let finalPlanName = 'Best Films VIP Plan';
+      
+      if (planId && SERVER_PLAN_PRICES[planId]) {
+        finalAmount = SERVER_PLAN_PRICES[planId].price;
+        finalPlanName = SERVER_PLAN_PRICES[planId].name;
+      } else if (reqAmount && !isNaN(Number(reqAmount)) && Number(reqAmount) > 0) {
+        finalAmount = Number(reqAmount);
+        finalPlanName = reqPlanName || 'Best Films Service';
+      }
 
-      // Store initial transaction state
+      const referenceId = crypto.randomUUID();
+      const externalId = `bestfilms_${Date.now()}`;
+      const targetEnv = process.env.MTN_TARGET_ENVIRONMENT || process.env.MTN_MOMO_TARGET_ENV || 'mtnrwanda';
+      const baseUrl = process.env.MTN_API_BASE_URL || 'https://proxy.momoapi.mtn.com';
+      const subKey = process.env.MTN_SUBSCRIPTION_KEY || process.env.MTN_MOMO_SUBSCRIPTION_KEY;
+      const callbackUrl = process.env.MTN_CALLBACK_URL || `${process.env.APP_URL || 'https://bestflim.vercel.app'}/api/mtn/callback`;
+
       const transaction: MoMoTransaction = {
         referenceId,
         phone: formattedPhone,
-        amount: numAmount,
+        amount: finalAmount,
         currency: 'RWF',
-        merchantId,
-        planId: planId || 'vip_plan',
-        planName: planName || 'Best Films VIP Plan',
+        externalId,
+        planId: planId || 'monthly_vip',
+        planName: finalPlanName,
+        userId: userId || undefined,
         status: 'PENDING',
-        ussdCode,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
 
       momoTransactionsMap.set(referenceId, transaction);
 
-      // Attempt live MTN MoMo API call if credentials present
-      const token = await getMTNMoMoToken();
+      const token = await getMTNAccessToken();
       let isLiveCall = false;
 
-      if (token && process.env.MTN_MOMO_SUBSCRIPTION_KEY) {
-        const host = targetEnv === 'sandbox' 
-          ? 'https://sandbox.momodeveloper.mtn.com' 
-          : 'https://proxy.momoapi.mtn.com';
-
+      if (token && subKey) {
         try {
-          const apiResponse = await fetch(`${host}/collection/v1_0/requesttopay`, {
+          const headers: Record<string, string> = {
+            'Authorization': `Bearer ${token}`,
+            'X-Reference-Id': referenceId,
+            'X-Target-Environment': targetEnv,
+            'Ocp-Apim-Subscription-Key': subKey,
+            'Content-Type': 'application/json',
+          };
+
+          if (callbackUrl && callbackUrl.startsWith('https://')) {
+            headers['X-Callback-Url'] = callbackUrl;
+          }
+
+          const apiResponse = await fetch(`${baseUrl}/collection/v1_0/requesttopay`, {
             method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${token}`,
-              'X-Reference-Id': referenceId,
-              'X-Target-Environment': targetEnv,
-              'Ocp-Apim-Subscription-Key': process.env.MTN_MOMO_SUBSCRIPTION_KEY,
-              'Content-Type': 'application/json',
-            },
+            headers,
             body: JSON.stringify({
-              amount: numAmount.toString(),
+              amount: finalAmount.toString(),
               currency: 'RWF',
-              externalId: `${merchantId}-${Date.now()}`,
+              externalId,
               payer: {
                 partyIdType: 'MSISDN',
                 partyId: formattedPhone,
               },
-              payerMessage: `Best Films ${planName || 'VIP'} Payment`,
-              payeeNote: `MoMoPay Merchant ${merchantId}`,
+              payerMessage: `Payment for ${finalPlanName}`,
+              payeeNote: 'Best Films Rwanda',
             }),
           });
 
           if (apiResponse.status === 202) {
             isLiveCall = true;
-            console.log(`[MTN MoMo API] RequestToPay accepted. ReferenceId: ${referenceId}`);
+            console.log(`[MTN MoMo Production] RequestToPay accepted. ReferenceId: ${referenceId}`);
           } else {
-            console.warn(`[MTN MoMo API] Response status ${apiResponse.status}, falling back to simulated push prompt.`);
+            const errText = await apiResponse.text();
+            console.error(`[MTN RequestToPay Error] Status: ${apiResponse.status}, Body: ${errText}`);
+            transaction.status = 'FAILED';
+            transaction.failureReason = `MTN API error HTTP ${apiResponse.status}`;
+            transaction.updatedAt = new Date().toISOString();
+            momoTransactionsMap.set(referenceId, transaction);
+
+            return res.status(400).json({
+              success: false,
+              referenceId,
+              status: 'FAILED',
+              message: req.body.lang === 'rw'
+                ? "Sitiyemejwe na MTN MoMo. Nyamuneka reba niba ufite amafaranga ahagije cyangwa ufite ikibazo cya MTN network."
+                : "MTN Request to pay failed to dispatch. Please check your phone or try again.",
+            });
           }
-        } catch (apiErr) {
-          console.error('[MTN MoMo API] Request to pay error:', apiErr);
+        } catch (apiErr: any) {
+          console.error('[MTN MoMo API Exception]:', apiErr);
         }
+      } else {
+        console.warn('[MTN MoMo] Running in pending request mode (credentials awaiting Vercel setup).');
       }
 
       return res.json({
         success: true,
         referenceId,
-        merchantId,
         phone: formattedPhone,
-        amount: numAmount,
+        amount: finalAmount,
         currency: 'RWF',
-        ussdCode,
         status: 'PENDING',
         isLiveCall,
-        targetEnv,
         message: req.body.lang === 'rw'
-          ? `Ubusabe bwo kwishyura ${numAmount} RWF kuri MoMo Code ${merchantId} bwohererejwe kuri ${formattedPhone}. Kanda USSD: ${ussdCode}`
-          : `Request to pay ${numAmount} RWF sent to ${formattedPhone}. Dial ${ussdCode} or enter PIN on push notification.`,
+          ? `Ubusabe bwo kwishyura ${finalAmount} RWF bwohererejwe kuri telefoni ${formattedPhone}. Kanda PIN kuri telefoni yawe bwo kwemeza.`
+          : `Payment request of ${finalAmount} RWF sent to ${formattedPhone}. Enter your MoMo PIN on your phone to authorize payment.`,
       });
     } catch (error: any) {
       console.error('Request-to-pay route error:', error);
@@ -213,10 +272,14 @@ async function startServer() {
         message: 'Internal server error processing MoMo payment request',
       });
     }
-  });
+  }
 
-  // Endpoint 2: Poll transaction status from MTN or Memory Store
-  app.get("/api/momo/status/:referenceId", async (req, res) => {
+  // Endpoints: Request to Pay
+  app.post("/api/momo/request-to-pay", handleRequestToPay);
+  app.post("/api/payments/mtn/create", handleRequestToPay);
+
+  // Core Payment Status handler
+  async function handlePaymentStatus(req: express.Request, res: express.Response) {
     const { referenceId } = req.params;
     const tx = momoTransactionsMap.get(referenceId);
 
@@ -227,35 +290,43 @@ async function startServer() {
       });
     }
 
-    // If configured with real MTN credentials, check live status endpoint
-    const token = await getMTNMoMoToken();
-    if (token && process.env.MTN_MOMO_SUBSCRIPTION_KEY && tx.status === 'PENDING') {
-      const targetEnv = process.env.MTN_MOMO_TARGET_ENV || 'sandbox';
-      const host = targetEnv === 'sandbox' 
-        ? 'https://sandbox.momodeveloper.mtn.com' 
-        : 'https://proxy.momoapi.mtn.com';
+    // Check status with MTN API if PENDING
+    if (tx.status === 'PENDING') {
+      const token = await getMTNAccessToken();
+      const subKey = process.env.MTN_SUBSCRIPTION_KEY || process.env.MTN_MOMO_SUBSCRIPTION_KEY;
+      const targetEnv = process.env.MTN_TARGET_ENVIRONMENT || process.env.MTN_MOMO_TARGET_ENV || 'mtnrwanda';
+      const baseUrl = process.env.MTN_API_BASE_URL || 'https://proxy.momoapi.mtn.com';
 
-      try {
-        const response = await fetch(`${host}/collection/v1_0/requesttopay/${referenceId}`, {
-          method: 'GET',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'X-Target-Environment': targetEnv,
-            'Ocp-Apim-Subscription-Key': process.env.MTN_MOMO_SUBSCRIPTION_KEY,
-          },
-        });
+      if (token && subKey) {
+        try {
+          const response = await fetch(`${baseUrl}/collection/v1_0/requesttopay/${referenceId}`, {
+            method: 'GET',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'X-Target-Environment': targetEnv,
+              'Ocp-Apim-Subscription-Key': subKey,
+            },
+          });
 
-        if (response.ok) {
-          const data = await response.json();
-          if (data.status) {
-            tx.status = data.status.toUpperCase();
-            tx.financialTransactionId = data.financialTransactionId;
-            tx.updatedAt = new Date().toISOString();
-            momoTransactionsMap.set(referenceId, tx);
+          if (response.ok) {
+            const data = await response.json();
+            if (data.status) {
+              const uppercaseStatus = data.status.toUpperCase() as 'PENDING' | 'SUCCESSFUL' | 'FAILED';
+              tx.status = uppercaseStatus;
+              tx.financialTransactionId = data.financialTransactionId || tx.financialTransactionId;
+              tx.failureReason = data.reason || tx.failureReason;
+              tx.updatedAt = new Date().toISOString();
+              if (uppercaseStatus === 'SUCCESSFUL') {
+                tx.completedAt = new Date().toISOString();
+              }
+              momoTransactionsMap.set(referenceId, tx);
+            }
+          } else {
+            console.warn(`[MTN Status Check] HTTP ${response.status} for reference ${referenceId}`);
           }
+        } catch (err) {
+          console.error('[MTN Status Exception]:', err);
         }
-      } catch (err) {
-        console.error('MTN MoMo Status Check Error:', err);
       }
     }
 
@@ -263,64 +334,44 @@ async function startServer() {
       success: true,
       transaction: tx,
     });
-  });
+  }
 
-  // Endpoint 3: Confirm PIN / Submit Payment Verification
-  app.post("/api/momo/confirm-pin", (req, res) => {
-    const { referenceId, pinCode } = req.body;
-    const tx = momoTransactionsMap.get(referenceId);
+  // Endpoints: Status Check
+  app.get("/api/momo/status/:referenceId", handlePaymentStatus);
+  app.get("/api/payments/mtn/status/:referenceId", handlePaymentStatus);
 
-    if (!tx) {
-      return res.status(404).json({
-        success: false,
-        message: 'Transaction reference not found',
-      });
-    }
-
-    if (!pinCode || pinCode.toString().trim().length < 4) {
-      return res.status(400).json({
-        success: false,
-        message: req.body.lang === 'rw' 
-          ? 'PIN ya MoMo igomba kuba nibura imibare 4.' 
-          : 'MoMo PIN must be at least 4 digits.',
-      });
-    }
-
-    // Successfully authorize transaction
-    tx.status = 'SUCCESSFUL';
-    tx.financialTransactionId = 'MOMO-' + Math.floor(100000000 + Math.random() * 900000000);
-    tx.updatedAt = new Date().toISOString();
-    momoTransactionsMap.set(referenceId, tx);
-
-    return res.json({
-      success: true,
-      transaction: tx,
-      message: req.body.lang === 'rw'
-        ? `Kwishyura amayarafanga ${tx.amount} RWF kuri MoMo Code ${tx.merchantId} byakozwe neza!`
-        : `Payment of ${tx.amount} RWF to MoMo Code ${tx.merchantId} successful!`,
-    });
-  });
-
-  // Endpoint 4: Webhook Callback handler for MTN MoMo
-  app.post("/api/momo/callback", (req, res) => {
+  // Core Callback handler
+  function handleCallback(req: express.Request, res: express.Response) {
     try {
-      const { referenceId, status, financialTransactionId } = req.body;
-      if (referenceId && momoTransactionsMap.has(referenceId)) {
-        const tx = momoTransactionsMap.get(referenceId)!;
-        tx.status = status ? status.toUpperCase() : 'SUCCESSFUL';
-        if (financialTransactionId) {
-          tx.financialTransactionId = financialTransactionId;
+      const payload = req.body || {};
+      const refId = payload.referenceId || payload.externalId;
+      const status = payload.status ? payload.status.toUpperCase() : 'SUCCESSFUL';
+      const finId = payload.financialTransactionId;
+
+      console.log(`[MTN MoMo Callback Received] Ref: ${refId}, Status: ${status}, FinId: ${finId}`);
+
+      if (refId && momoTransactionsMap.has(refId)) {
+        const tx = momoTransactionsMap.get(refId)!;
+        // Idempotency check: don't overwrite if already SUCCESSFUL
+        if (tx.status !== 'SUCCESSFUL') {
+          tx.status = status === 'SUCCESSFUL' ? 'SUCCESSFUL' : 'FAILED';
+          if (finId) tx.financialTransactionId = finId;
+          tx.updatedAt = new Date().toISOString();
+          if (tx.status === 'SUCCESSFUL') tx.completedAt = new Date().toISOString();
+          momoTransactionsMap.set(refId, tx);
         }
-        tx.updatedAt = new Date().toISOString();
-        momoTransactionsMap.set(referenceId, tx);
-        console.log(`[MTN MoMo Webhook] Updated transaction ${referenceId} to ${tx.status}`);
       }
-      return res.status(200).send({ received: true });
+      return res.status(200).json({ status: "OK", received: true });
     } catch (err) {
-      console.error('Webhook error:', err);
-      return res.status(500).send({ error: 'Webhook handling failed' });
+      console.error('[MTN Callback Error]:', err);
+      return res.status(500).json({ error: "Callback processing failed" });
     }
-  });
+  }
+
+  // Endpoints: Webhook Callback
+  app.post("/api/momo/callback", handleCallback);
+  app.post("/api/mtn/callback", handleCallback);
+
 
 
 

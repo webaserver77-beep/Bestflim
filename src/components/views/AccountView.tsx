@@ -59,7 +59,7 @@ export const AccountView: React.FC<AccountViewProps> = ({
     return () => window.removeEventListener('bestfilms_promo_mode_updated', handlePromoUpdate);
   }, []);
 
-  const [activeSubTab, setActiveSubTab] = useState<'favorites' | 'watchLater' | 'history' | 'playlists' | 'subscription'>('subscription');
+  const [activeSubTab, setActiveSubTab] = useState<'favorites' | 'watchLater' | 'history' | 'playlists' | 'subscription'>('favorites');
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState<boolean>(false);
   const [showAuthModal, setShowAuthModal] = useState<boolean>(false);
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
@@ -224,7 +224,15 @@ export const AccountView: React.FC<AccountViewProps> = ({
           if (res.ok && data.success && data.transaction) {
             if (data.transaction.status === 'SUCCESSFUL') {
               clearInterval(intervalId);
-              handleConfirmPayment();
+              handlePaymentSuccess(data.transaction);
+            } else if (data.transaction.status === 'FAILED') {
+              clearInterval(intervalId);
+              setMomoError(
+                lang === 'rw'
+                  ? 'Kwishyura byananiwe cyangwa byahagaritswe kuri telefoni yawe. Nyamuneka ongera ugerageze.'
+                  : 'Payment failed or was cancelled on your phone. Please try again.'
+              );
+              setIsProcessingPay(false);
             }
           }
         } catch (err) {
@@ -273,93 +281,67 @@ export const AccountView: React.FC<AccountViewProps> = ({
     }
   };
 
-  const handleConfirmPayment = async () => {
+  const handlePaymentSuccess = (txData?: any) => {
     if (!selectedPlan) return;
     setIsProcessingPay(true);
-    setMomoError(null);
 
-    try {
-      if (momoRefId) {
-        const res = await fetch('/api/momo/confirm-pin', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            referenceId: momoRefId,
-            pinCode: pinCode || '1234',
-            lang,
-          }),
-        });
-        const data = await res.json();
-        if (!res.ok || !data.success) {
-          setMomoError(data.message || (lang === 'rw' ? 'PIN ntabwo yemewe.' : 'Invalid PIN code.'));
-          setIsProcessingPay(false);
-          return;
-        }
-      }
-
-      const now = new Date();
-      const startDateStr = now.toISOString().split('T')[0];
-      
-      let endDateStr = 'Lifetime (Ntabwo Irangira)';
-      if (selectedPlan.id !== 'free') {
-        const endDate = new Date(now.getTime() + selectedPlan.durationDays * 24 * 60 * 60 * 1000);
-        endDateStr = endDate.toISOString().split('T')[0];
-      }
-
-      const updatedPlan: SubscriptionPlan = {
-        id: selectedPlan.id,
-        name: selectedPlan.name,
-        type: selectedPlan.type,
-        price: selectedPlan.price,
-        amountRwf: selectedPlan.amountRwf,
-        startedAt: startDateStr,
-        endsAt: endDateStr,
-        paymentMethod: payMethod === 'mtn' ? 'MTN Mobile Money' : payMethod === 'airtel' ? 'Airtel Money' : 'Bank Visa/Mastercard',
-        paymentPhone: momoPhone,
-        isActive: true,
-      };
-
-      updateSubscription(updatedPlan);
-
-      // Record transaction log for real analytics
-      try {
-        const newTx = {
-          referenceId: `ref-${Date.now().toString().slice(-6)}`,
-          phone: momoPhone || '250788000000',
-          amount: selectedPlan.amountRwf || 0,
-          currency: 'RWF',
-          merchantId: '1461297',
-          planName: selectedPlan.name,
-          status: 'SUCCESSFUL',
-          ussdCode: `*182*8*1*1461297*${selectedPlan.amountRwf}#`,
-          createdAt: new Date().toISOString(),
-        };
-        const rawTxs = localStorage.getItem('bestfilms_momo_txs');
-        const txList = rawTxs ? JSON.parse(rawTxs) : [];
-        txList.unshift(newTx);
-        localStorage.setItem('bestfilms_momo_txs', JSON.stringify(txList));
-        window.dispatchEvent(new Event('bestfilms_momo_tx_added'));
-      } catch (txErr) {
-        console.error('Save transaction error:', txErr);
-      }
-
-      setIsProcessingPay(false);
-      setPaySuccessMessage(
-        lang === 'rw'
-          ? `Kwishyura amayarafanga ${selectedPlan.price} byakozwe neza! Ifatabuguzi ryawe rya "${selectedPlan.name}" yatangiye kuva ${startDateStr} kugeza ${endDateStr}.`
-          : `Payment of ${selectedPlan.price} successful! Your subscription "${selectedPlan.name}" is now active from ${startDateStr} until ${endDateStr}.`
-      );
-
-      setTimeout(() => {
-        setShowPayModal(false);
-        setPaySuccessMessage(null);
-      }, 4000);
-    } catch (err) {
-      console.error(err);
-      setMomoError(lang === 'rw' ? 'Ikosa ryo kwemeza kwishyura' : 'Error confirming payment');
-      setIsProcessingPay(false);
+    const now = new Date();
+    const startDateStr = now.toISOString().split('T')[0];
+    
+    let endDateStr = 'Lifetime (Ntabwo Irangira)';
+    if (selectedPlan.id !== 'free') {
+      const endDate = new Date(now.getTime() + selectedPlan.durationDays * 24 * 60 * 60 * 1000);
+      endDateStr = endDate.toISOString().split('T')[0];
     }
+
+    const updatedPlan: SubscriptionPlan = {
+      id: selectedPlan.id,
+      name: selectedPlan.name,
+      type: selectedPlan.type,
+      price: selectedPlan.price,
+      amountRwf: selectedPlan.amountRwf,
+      startedAt: startDateStr,
+      endsAt: endDateStr,
+      paymentMethod: payMethod === 'mtn' ? 'MTN Mobile Money' : payMethod === 'airtel' ? 'Airtel Money' : 'Bank Visa/Mastercard',
+      paymentPhone: momoPhone,
+      isActive: true,
+    };
+
+    updateSubscription(updatedPlan);
+
+    // Record transaction log for admin analytics
+    try {
+      const newTx = {
+        referenceId: txData?.referenceId || momoRefId || `ref-${Date.now().toString().slice(-6)}`,
+        phone: momoPhone || '250788000000',
+        amount: selectedPlan.amountRwf || 0,
+        currency: 'RWF',
+        planName: selectedPlan.name,
+        status: 'SUCCESSFUL',
+        createdAt: new Date().toISOString(),
+      };
+      const rawTxs = localStorage.getItem('bestfilms_momo_txs');
+      const txList = rawTxs ? JSON.parse(rawTxs) : [];
+      txList.unshift(newTx);
+      localStorage.setItem('bestfilms_momo_txs', JSON.stringify(txList));
+      window.dispatchEvent(new Event('bestfilms_momo_tx_added'));
+    } catch (txErr) {
+      console.error('Save transaction error:', txErr);
+    }
+
+    setIsProcessingPay(false);
+    setPaySuccessMessage(
+      lang === 'rw'
+        ? `Kwishyura amayarafanga ${selectedPlan.price} byakozwe neza! Ifatabuguzi ryawe rya "${selectedPlan.name}" yatangiye kuva ${startDateStr} kugeza ${endDateStr}.`
+        : `Payment of ${selectedPlan.price} successful! Your subscription "${selectedPlan.name}" is now active from ${startDateStr} until ${endDateStr}.`
+    );
+
+    setTimeout(() => {
+      setShowPayModal(false);
+      setPaySuccessMessage(null);
+    }, 4000);
   };
+
 
   const currentSub = user.subscription || {
     id: 'free',
@@ -422,13 +404,18 @@ export const AccountView: React.FC<AccountViewProps> = ({
         </div>
 
         {/* Current User Subscription Quick Status */}
-        <div className="bg-zinc-950/80 border border-zinc-800 rounded-xl p-3.5 flex items-center space-x-4">
-          <div className="p-2.5 rounded-lg bg-red-600/20 text-red-500 border border-red-500/30">
+        <div 
+          onClick={() => setActiveSubTab('subscription')}
+          className="bg-zinc-950/80 hover:bg-zinc-900 border border-zinc-800 hover:border-red-500/50 rounded-xl p-3.5 flex items-center space-x-4 cursor-pointer transition-all group shadow-sm active:scale-95"
+          title={lang === 'rw' ? 'Kanda hano urebe amapulani n\'igiciro cy\'ifatabuguzi' : 'Click to view subscription plans and pricing'}
+        >
+          <div className="p-2.5 rounded-lg bg-red-600/20 text-red-500 border border-red-500/30 group-hover:bg-red-600 group-hover:text-white transition-colors">
             <Zap className="w-5 h-5" />
           </div>
           <div>
-            <div className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">
-              {lang === 'rw' ? 'Ifatabuguzi Yanjye' : 'Current Plan'}
+            <div className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider flex items-center space-x-1">
+              <span>{lang === 'rw' ? 'Ifatabuguzi Yanjye' : 'Current Plan'}</span>
+              <span className="text-[10px] text-amber-400 font-bold ml-1 hover:underline">({lang === 'rw' ? 'Hindura' : 'Change'})</span>
             </div>
             <div className="text-sm font-black text-white flex items-center space-x-2">
               <span>{currentSub.name}</span>
@@ -1195,10 +1182,10 @@ export const AccountView: React.FC<AccountViewProps> = ({
                   </div>
                 )}
 
-                {/* STEP 2: SIMULATED MOBILE MONEY PIN ALERT ON PHONE */}
+                {/* STEP 2: REAL-TIME MOBILE MONEY PUSH ALERT STATUS */}
                 {momoStep === 'pin_prompt' && (
                   <div className="space-y-4 animate-fadeIn">
-                    {/* Simulated Phone Alert Dialog */}
+                    {/* Phone Alert Dialog */}
                     <div className="bg-amber-950/40 border-2 border-amber-500/80 p-5 rounded-2xl shadow-2xl space-y-4 relative overflow-hidden">
                       <div className="flex items-center space-x-3 border-b border-amber-500/30 pb-3">
                         <div className="w-10 h-10 rounded-full bg-amber-500/20 text-amber-400 flex items-center justify-center flex-shrink-0 animate-pulse">
@@ -1206,66 +1193,53 @@ export const AccountView: React.FC<AccountViewProps> = ({
                         </div>
                         <div>
                           <h4 className="font-extrabold text-white text-sm">
-                            📲 {lang === 'rw' ? 'Ubutumwa bwo Kwishyura (MoMo Push Alert)' : 'MoMo PIN Push Prompt Sent'}
+                            📲 {lang === 'rw' ? 'Ubutumwa bwo Kwishyura Bwohererejwe' : 'MoMo Push Request Dispatched'}
                           </h4>
                           <p className="text-[11px] text-amber-300 font-mono">
-                            {lang === 'rw' ? `Bwohererejwe kuri: ${momoPhone}` : `Sent to phone: ${momoPhone}`}
+                            {lang === 'rw' ? `Telefoni: ${momoPhone}` : `Target Phone: ${momoPhone}`}
                           </p>
                         </div>
                       </div>
 
                       <div className="space-y-2 text-xs text-zinc-200">
-                        <p className="leading-relaxed">
+                        <p className="leading-relaxed font-bold text-amber-300">
                           {lang === 'rw'
-                            ? `Ubusabe bwa ${selectedPlan.price} bwohererejwe kuri telefoni yawe (${momoPhone}). Reba kuri shusho ya telefoni yawe hanyuma kwinjiza PIN ya MoMo bwo kwemeza ko amafaranga akatwa.`
-                            : `A payment request of ${selectedPlan.price} has been pushed to ${momoPhone}. Check your phone screen and enter your Mobile Money PIN to authorize payment.`}
+                            ? `Ubusabe bwa ${selectedPlan.price} bwohererejwe kuri telefoni yawe (${momoPhone}).`
+                            : `A payment request of ${selectedPlan.price} has been pushed to ${momoPhone}.`}
+                        </p>
+                        <p className="text-zinc-300">
+                          {lang === 'rw'
+                            ? 'Reba kuri shusho ya telefoni yawe hanyuma kwinjiza PIN yawe ya Mobile Money bwo kwemeza kwishyura.'
+                            : 'Check your phone screen now and enter your Mobile Money PIN to authorize payment.'}
                         </p>
                       </div>
 
-                      {/* PIN Entry Simulation */}
-                      <div className="space-y-1 border-t border-amber-500/30 pt-3">
-                        <label className="text-xs font-bold text-white block flex items-center space-x-1">
-                          <Lock className="w-3.5 h-3.5 text-amber-400" />
-                          <span>{lang === 'rw' ? 'Injiza PIN ya MoMo (Enter MoMo PIN):' : 'Enter MoMo PIN (Simulation):'}</span>
-                        </label>
-                        <input
-                          id="momo-pin-input"
-                          type="password"
-                          maxLength={5}
-                          value={pinCode}
-                          onChange={(e) => setPinCode(e.target.value)}
-                          placeholder="****"
-                          className="w-full px-4 py-3 bg-zinc-950 border border-amber-500/60 rounded-xl text-white font-mono text-lg text-center tracking-widest focus:outline-none focus:border-amber-400"
-                        />
+                      {/* Live Polling Spinner Status */}
+                      <div className="p-3 bg-zinc-950/80 border border-amber-500/40 rounded-xl flex items-center space-x-3">
+                        <div className="w-5 h-5 border-2 border-amber-400 border-t-transparent rounded-full animate-spin flex-shrink-0" />
+                        <span className="text-xs font-bold text-amber-400">
+                          {lang === 'rw'
+                            ? 'Tugerekeranye gukina n\'imikorere ya MTN... (Waiting for your MoMo PIN approval)'
+                            : 'Waiting for MTN payment confirmation on your phone...'}
+                        </span>
                       </div>
                     </div>
 
                     <div className="flex space-x-3">
                       <button
                         type="button"
-                        onClick={() => setMomoStep('details')}
-                        className="px-4 py-3.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-bold text-xs"
+                        onClick={() => {
+                          setMomoStep('details');
+                          setIsProcessingPay(false);
+                        }}
+                        className="w-full py-3.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-bold text-xs transition-colors"
                       >
-                        {lang === 'rw' ? 'Subira Inyuma' : 'Back'}
-                      </button>
-
-                      <button
-                        id="confirm-pay-now-btn"
-                        type="button"
-                        onClick={handleConfirmPayment}
-                        disabled={isProcessingPay}
-                        className="flex-1 py-3.5 rounded-xl font-bold bg-gradient-to-r from-emerald-600 to-amber-600 hover:from-emerald-500 hover:to-amber-500 text-white shadow-xl shadow-emerald-950/60 flex items-center justify-center space-x-2 text-xs disabled:opacity-50 transition-transform active:scale-95"
-                      >
-                        <Zap className="w-4 h-4 fill-white" />
-                        <span>
-                          {isProcessingPay
-                            ? (lang === 'rw' ? 'Kwishyura biratunganywa...' : 'Verifying PIN & Payment...')
-                            : (lang === 'rw' ? 'Emeza PIN & Rangiza Kwishyura' : 'Confirm PIN & Complete Payment')}
-                        </span>
+                        {lang === 'rw' ? 'Subira Inyuma / Guhindura Nimero' : 'Cancel / Change Phone Number'}
                       </button>
                     </div>
                   </div>
                 )}
+
               </>
             )}
           </div>

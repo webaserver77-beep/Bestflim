@@ -73,6 +73,14 @@ export const DownloadSpeedModal: React.FC<DownloadSpeedModalProps> = ({
             if (data.transaction.status === 'SUCCESSFUL') {
               clearInterval(intervalId);
               handleConfirmPinAndActivate();
+            } else if (data.transaction.status === 'FAILED') {
+              clearInterval(intervalId);
+              setSubGateError(
+                lang === 'rw'
+                  ? 'Kwishyura byananiwe cyangwa byahagaritswe. Nyamuneka ongera ugerageze.'
+                  : 'Payment failed or was cancelled. Please try again.'
+              );
+              setIsProcessingSub(false);
             }
           }
         } catch (err) {
@@ -84,6 +92,7 @@ export const DownloadSpeedModal: React.FC<DownloadSpeedModalProps> = ({
       if (intervalId) clearInterval(intervalId);
     };
   }, [subGateStep, momoRefId]);
+
 
   // Download simulation state
   const [isDownloading, setIsDownloading] = useState<boolean>(true);
@@ -484,54 +493,41 @@ export const DownloadSpeedModal: React.FC<DownloadSpeedModalProps> = ({
                 </button>
               </form>
             ) : (
-              /* PIN Entry Step */
+              /* Real-time MoMo Push Status Step */
               <div className="space-y-4 animate-fadeIn bg-zinc-950 p-4 rounded-xl border border-amber-500/40">
                 <div className="flex items-center space-x-2.5 text-amber-300 border-b border-zinc-800 pb-3">
                   <Smartphone className="w-5 h-5 text-amber-400 animate-pulse flex-shrink-0" />
                   <div className="text-xs">
-                    <p className="font-extrabold text-white">📲 {lang === 'rw' ? 'MoMo PIN Push Screen Alert' : 'MoMo PIN Push Prompt Sent'}</p>
-                    <p className="text-zinc-400 text-[11px]">Bwohererejwe kuri telefoni: <span className="text-amber-400 font-mono font-bold">{momoPhone}</span></p>
+                    <p className="font-extrabold text-white">📲 {lang === 'rw' ? 'Ubutumwa bwo Kwishyura Bwohererejwe' : 'MoMo Push Request Sent'}</p>
+                    <p className="text-zinc-400 text-[11px]">Telefoni: <span className="text-amber-400 font-mono font-bold">{momoPhone}</span></p>
                   </div>
                 </div>
 
                 <p className="text-xs text-zinc-300 leading-relaxed">
                   {lang === 'rw'
-                    ? 'Ubusabe bwo kwishyura bwohererejwe kuri telefoni yawe. Injiza PIN ya MoMo hanyuma ukande button iri hasi kugira ngo kumanura bitangire muri ako kanya!'
-                    : 'Payment prompt sent to your phone screen. Enter your MoMo PIN and click the button below to complete activation & unlock movie downloads!'}
+                    ? 'Ubusabe bwo kwishyura bwohererejwe kuri telefoni yawe. Reba kuri shusho ya telefoni yawe hanyuma kwinjiza PIN ya MoMo bwo kwemeza ko amafaranga akatwa.'
+                    : 'Payment prompt sent to your phone screen. Please enter your MoMo PIN on your phone to complete activation & unlock movie downloads!'}
                 </p>
 
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-amber-400 block flex items-center space-x-1">
-                    <Lock className="w-3.5 h-3.5" />
-                    <span>{lang === 'rw' ? 'Injiza PIN ya MoMo (Enter MoMo PIN):' : 'Enter MoMo PIN (Simulation):'}</span>
-                  </label>
-                  <input
-                    id="download-modal-momo-pin"
-                    type="password"
-                    maxLength={5}
-                    value={momoPin}
-                    onChange={(e) => setMomoPin(e.target.value)}
-                    placeholder="****"
-                    className="w-full px-4 py-2.5 bg-zinc-900 border border-amber-500/60 rounded-xl text-white font-mono text-center text-base tracking-widest focus:outline-none focus:border-amber-400"
-                  />
+                <div className="p-3 bg-zinc-900 border border-amber-500/30 rounded-xl flex items-center space-x-3">
+                  <div className="w-5 h-5 border-2 border-amber-400 border-t-transparent rounded-full animate-spin flex-shrink-0" />
+                  <span className="text-xs font-bold text-amber-400">
+                    {lang === 'rw'
+                      ? 'Tugerekeranye gukina n\'imikorere ya MTN... (Waiting for payment authorization)'
+                      : 'Waiting for MTN payment authorization on your phone...'}
+                  </span>
                 </div>
 
                 <button
                   type="button"
-                  id="confirm-pin-unlock-download-btn"
-                  onClick={handleConfirmPinAndActivate}
-                  disabled={isProcessingSub}
-                  className="w-full py-3.5 rounded-xl font-black bg-gradient-to-r from-emerald-600 to-amber-500 hover:from-emerald-500 hover:to-amber-400 text-white shadow-lg flex items-center justify-center space-x-2 text-xs cursor-pointer"
+                  onClick={() => setSubGateStep('form')}
+                  className="w-full py-3 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-bold text-xs"
                 >
-                  <Zap className="w-4 h-4 fill-white" />
-                  <span>
-                    {isProcessingSub
-                      ? (lang === 'rw' ? 'Kwerekana ko VIP yishyuwe & Kumanura...' : 'Activating VIP & Unlocking Download...')
-                      : (lang === 'rw' ? 'Emeza PIN -> Tangira Kumanura filme (Unlock Download)' : 'Confirm PIN & Start Download Now')}
-                  </span>
+                  {lang === 'rw' ? 'Guhindura Nimero / Subira Inyuma' : 'Cancel / Change Phone Number'}
                 </button>
               </div>
             )}
+
           </div>
         ) : false ? (
           <>
