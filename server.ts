@@ -83,28 +83,29 @@ async function startServer() {
     const apiUser = (process.env.MTN_API_USER || process.env.MTN_MOMO_API_USER || '').trim();
     const apiKey = (process.env.MTN_API_KEY || process.env.MTN_MOMO_API_KEY || '').trim();
     const subKey = (process.env.MTN_SUBSCRIPTION_KEY || process.env.MTN_MOMO_SUBSCRIPTION_KEY || '').trim();
-    const rawBaseUrl = process.env.MTN_API_BASE_URL || 'https://proxy.momoapi.mtn.com';
-    const baseUrl = rawBaseUrl.replace(/\/+$/, '');
     const targetEnv = (process.env.MTN_TARGET_ENVIRONMENT || process.env.MTN_MOMO_TARGET_ENV || 'mtnrwanda').trim();
+    const defaultBaseUrl = targetEnv === 'sandbox' ? 'https://sandbox.momodeveloper.mtn.com' : 'https://proxy.momoapi.mtn.com';
+    const rawBaseUrl = process.env.MTN_API_BASE_URL || defaultBaseUrl;
+    const baseUrl = rawBaseUrl.replace(/\/+$/, '');
 
     if (!apiUser || !apiKey || !subKey) {
-      console.warn('[MTN MoMo] Production credentials missing in environment variables.');
+      console.warn('[MTN MoMo] Credentials missing in environment variables.');
       return null;
     }
 
-    // Check if credentials are placeholder strings
+    // Check if credentials are placeholder strings or invalid
     const isPlaceholder = (val: string) => 
-      val.includes('here') || val.includes('your_') || val.includes('dummy') || val.includes('MY_');
+      !val || val.length < 8 || val.includes('here') || val.includes('your_') || val.includes('dummy') || val.includes('MY_') || val.includes('production_');
 
     if (isPlaceholder(apiUser) || isPlaceholder(apiKey) || isPlaceholder(subKey)) {
-      console.warn('[MTN MoMo] Environment variables contain placeholder values. Enter real credentials in Vercel / environment settings.');
+      console.warn('[MTN MoMo] Production credentials not configured yet. Set MTN_API_USER, MTN_API_KEY, and MTN_SUBSCRIPTION_KEY in Vercel Environment Variables.');
       return null;
     }
 
     const authHeader = 'Basic ' + Buffer.from(`${apiUser}:${apiKey}`).toString('base64');
 
     try {
-      const response = await fetch(`${baseUrl}/collection/token/`, {
+      let response = await fetch(`${baseUrl}/collection/token/`, {
         method: 'POST',
         headers: {
           'Authorization': authHeader,
@@ -114,7 +115,7 @@ async function startServer() {
       });
 
       if (!response.ok) {
-        console.error(`[MTN Token Error] Status: ${response.status}. Please verify MTN_API_USER, MTN_API_KEY, and MTN_SUBSCRIPTION_KEY credentials in Vercel / environment variables.`);
+        console.warn(`[MTN MoMo Token Response] HTTP ${response.status}. Please check MTN_API_USER, MTN_API_KEY, and MTN_SUBSCRIPTION_KEY credentials in Vercel settings.`);
         return null;
       }
 
