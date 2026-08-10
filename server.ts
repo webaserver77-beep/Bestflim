@@ -72,14 +72,8 @@ async function startServer() {
     return cleaned;
   }
 
-  // Token cache to avoid requesting an OAuth token on every call
-  let cachedMTNToken: { token: string; expiresAt: number } | null = null;
-
-  async function getMTNAccessToken(): Promise<string | null> {
-    if (cachedMTNToken && cachedMTNToken.expiresAt > Date.now()) {
-      return cachedMTNToken.token;
-    }
-
+  // Safe server-side configuration helper for MTN MoMo
+  function getMtnConfig() {
     const apiUser = (
       process.env.MTN_API_USER || 
       process.env.MTN_MOMO_API_USER || 
@@ -101,45 +95,103 @@ async function startServer() {
       process.env.MOMO_SUBSCRIPTION_KEY || ''
     ).trim();
 
-    const targetEnv = (
+    const targetEnvironment = (
       process.env.MTN_TARGET_ENVIRONMENT || 
       process.env.MTN_MOMO_TARGET_ENV || 
       process.env.MOMO_TARGET_ENV || 
       'mtnrwanda'
     ).trim();
 
-    const defaultBaseUrl = targetEnv === 'sandbox' ? 'https://sandbox.momodeveloper.mtn.com' : 'https://proxy.momoapi.mtn.com';
-    const rawBaseUrl = process.env.MTN_API_BASE_URL || process.env.MTN_BASE_URL || process.env.MOMO_BASE_URL || defaultBaseUrl;
+    const defaultBaseUrl = 'https://proxy.momoapi.mtn.com';
+
+    const rawBaseUrl = (
+      process.env.MTN_API_BASE_URL || 
+      process.env.MTN_BASE_URL || 
+      process.env.MOMO_BASE_URL || 
+      defaultBaseUrl
+    ).trim();
+
     const baseUrl = rawBaseUrl.replace(/\/+$/, '');
 
-    if (!apiUser || !apiKey || !subKey) {
-      console.warn('[MTN MoMo] Credentials missing in environment variables.');
+    const callbackUrl = (
+      process.env.MTN_CALLBACK_URL || 
+      `${process.env.APP_URL || 'https://bestflim.vercel.app'}/api/mtn/callback`
+    ).trim();
+
+    const apiUserConfigured = Boolean(apiUser && apiUser.length > 0);
+    const apiKeyConfigured = Boolean(apiKey && apiKey.length > 0);
+    const subscriptionKeyConfigured = Boolean(subKey && subKey.length > 0);
+    const callbackConfigured = Boolean(callbackUrl && callbackUrl.length > 0);
+
+    const isConfigured = apiUserConfigured && apiKeyConfigured && subscriptionKeyConfigured;
+
+    return {
+      isConfigured,
+      apiUser,
+      apiKey,
+      subKey,
+      targetEnvironment,
+      baseUrl,
+      callbackUrl,
+      status: {
+        configured: isConfigured,
+        targetEnvironment,
+        baseUrlConfigured: Boolean(baseUrl),
+        apiUserConfigured,
+        apiKeyConfigured,
+        subscriptionKeyConfigured,
+        callbackConfigured,
+      }
+    };
+  }
+
+  // Diagnostic Endpoint: Check whether required server environment configuration exists (Secrets are NEVER exposed)
+  app.get(["/api/mtn/config-status", "/api/payments/mtn/config-status"], (req, res) => {
+    const config = getMtnConfig();
+    return res.json(config.status);
+  });
+
+  // Token cache to avoid requesting an OAuth token on every call
+  let cachedMTNToken: { token: string; expiresAt: number } | null = null;
+
+  async function getMTNAccessToken(): Promise<string | null> {
+    if (cachedMTNToken && cachedMTNToken.expiresAt > Date.now()) {
+      return cachedMTNToken.token;
+    }
+
+    const config = getMtnConfig();
+
+    if (!config.isConfigured) {
+      console.warn('[MTN MoMo] Environment configuration is incomplete. Missing MTN_API_USER, MTN_API_KEY, or MTN_SUBSCRIPTION_KEY.');
       return null;
     }
 
-    // Strict check for template strings or dummy values (without false positives on real UUIDs/keys)
-    const isPlaceholder = (val: string) => 
-      !val || val.length < 5 || val.endsWith('_here') || val.includes('your_') || val.includes('dummy') || val.startsWith('MY_');
-
-    if (isPlaceholder(apiUser) || isPlaceholder(apiKey) || isPlaceholder(subKey)) {
-      console.warn('[MTN MoMo] Production credentials contain placeholder strings. Set actual production values in Vercel Environment Variables.');
-      return null;
-    }
-
-    const authHeader = 'Basic ' + Buffer.from(`${apiUser}:${apiKey}`).toString('base64');
+    const authHeader = 'Basic ' + Buffer.from(`${config.apiUser}:${config.apiKey}`).toString('base64');
 
     try {
-      let response = await fetch(`${baseUrl}/collection/token/`, {
+      let response = await fetch(`${config.baseUrl}/collection/token/`, {
         method: 'POST',
         headers: {
           'Authorization': authHeader,
-          'Ocp-Apim-Subscription-Key': subKey,
-          'X-Target-Environment': targetEnv,
+          'Ocp-Apim-Subscription-Key': config.subKey,
+          'X-Target-Environment': config.targetEnvironment,
         },
       });
 
+      // Try fallback url without trailing slash if 404
+      if (response.status === 404) {
+        response = await fetch(`${config.baseUrl}/collection/token`, {
+          method: 'POST',
+          headers: {
+            'Authorization': authHeader,
+            'Ocp-Apim-Subscription-Key': config.subKey,
+            'X-Target-Environment': config.targetEnvironment,
+          },
+        });
+      }
+
       if (!response.ok) {
-        console.warn(`[MTN MoMo Token Response] HTTP ${response.status}. Please check MTN_API_USER, MTN_API_KEY, and MTN_SUBSCRIPTION_KEY credentials in Vercel settings.`);
+        console.warn(`[MTN MoMo Token Response] HTTP ${response.status}. Verify credentials in Vercel settings.`);
         return null;
       }
 
@@ -197,12 +249,7 @@ async function startServer() {
 
       const referenceId = crypto.randomUUID();
       const externalId = `bestfilms_${Date.now()}`;
-      const targetEnv = (process.env.MTN_TARGET_ENVIRONMENT || process.env.MTN_MOMO_TARGET_ENV || process.env.MOMO_TARGET_ENV || 'mtnrwanda').trim();
-      const defaultBaseUrl = targetEnv === 'sandbox' ? 'https://sandbox.momodeveloper.mtn.com' : 'https://proxy.momoapi.mtn.com';
-      const rawBaseUrl = process.env.MTN_API_BASE_URL || process.env.MTN_BASE_URL || process.env.MOMO_BASE_URL || defaultBaseUrl;
-      const baseUrl = rawBaseUrl.replace(/\/+$/, '');
-      const subKey = (process.env.MTN_SUBSCRIPTION_KEY || process.env.MTN_MOMO_SUBSCRIPTION_KEY || process.env.OCP_APIM_SUBSCRIPTION_KEY || process.env.MOMO_SUBSCRIPTION_KEY || '').trim();
-      const callbackUrl = process.env.MTN_CALLBACK_URL || `${process.env.APP_URL || 'https://bestflim.vercel.app'}/api/mtn/callback`;
+      const config = getMtnConfig();
 
       const transaction: MoMoTransaction = {
         referenceId,
@@ -220,24 +267,35 @@ async function startServer() {
 
       momoTransactionsMap.set(referenceId, transaction);
 
+      if (!config.isConfigured) {
+        console.warn('[MTN MoMo] Credentials incomplete. Set MTN_API_USER, MTN_API_KEY, and MTN_SUBSCRIPTION_KEY in Vercel.');
+        return res.status(400).json({
+          success: false,
+          credentialsConfigured: false,
+          message: req.body.lang === 'rw'
+            ? "💡 Nimero yawe ntikira ubutumwa kuko ibizitiro bya MTN MoMo API (MTN_API_USER, MTN_API_KEY, MTN_SUBSCRIPTION_KEY) ntibirashyirwa muri Environment Variables za Vercel. Nyamuneka bishyire muri Vercel Settings > Environment Variables bwo guhita ibona USSD Push kuri telefoni."
+            : "💡 Mobile Money push prompt cannot reach your phone because MTN MoMo API credentials (MTN_API_USER, MTN_API_KEY, MTN_SUBSCRIPTION_KEY) are missing in Vercel Environment Variables. Please add them in Vercel Settings to dispatch live USSD prompts."
+        });
+      }
+
       const token = await getMTNAccessToken();
       let isLiveCall = false;
 
-      if (token && subKey) {
+      if (token) {
         try {
           const headers: Record<string, string> = {
             'Authorization': `Bearer ${token}`,
             'X-Reference-Id': referenceId,
-            'X-Target-Environment': targetEnv,
-            'Ocp-Apim-Subscription-Key': subKey,
+            'X-Target-Environment': config.targetEnvironment,
+            'Ocp-Apim-Subscription-Key': config.subKey,
             'Content-Type': 'application/json',
           };
 
-          if (callbackUrl && callbackUrl.startsWith('https://')) {
-            headers['X-Callback-Url'] = callbackUrl;
+          if (config.callbackUrl && config.callbackUrl.startsWith('https://')) {
+            headers['X-Callback-Url'] = config.callbackUrl;
           }
 
-          const apiResponse = await fetch(`${baseUrl}/collection/v1_0/requesttopay`, {
+          const apiResponse = await fetch(`${config.baseUrl}/collection/v1_0/requesttopay`, {
             method: 'POST',
             headers,
             body: JSON.stringify({
@@ -255,7 +313,7 @@ async function startServer() {
 
           if (apiResponse.status === 202) {
             isLiveCall = true;
-            console.log(`[MTN MoMo Production] RequestToPay accepted. ReferenceId: ${referenceId}`);
+            console.log(`[MTN MoMo Production] RequestToPay accepted (HTTP 202). ReferenceId: ${referenceId}`);
           } else {
             const errText = await apiResponse.text();
             console.error(`[MTN RequestToPay Error] Status: ${apiResponse.status}, Body: ${errText}`);
@@ -275,15 +333,20 @@ async function startServer() {
           }
         } catch (apiErr: any) {
           console.error('[MTN MoMo API Exception]:', apiErr);
+          transaction.status = 'FAILED';
+          momoTransactionsMap.set(referenceId, transaction);
+          return res.status(500).json({
+            success: false,
+            message: 'Network error communicating with MTN MoMo gateway.',
+          });
         }
       } else {
-        console.warn('[MTN MoMo] Credentials missing or placeholder. Prompt cannot be dispatched to phone until environment variables are set in Vercel.');
         return res.status(400).json({
           success: false,
           credentialsConfigured: false,
           message: req.body.lang === 'rw'
-            ? "💡 Nimero yawe ntikira ubutumwa kuko ibizitiro bya MTN MoMo API (MTN_API_USER, MTN_API_KEY, MTN_SUBSCRIPTION_KEY) ntibirashyirwa muri Environment Variables za Vercel. Nyamuneka bishyire muri Vercel Settings > Environment Variables bwo guhita ibona USSD Push kuri telefoni."
-            : "💡 Mobile Money push prompt cannot reach your phone because MTN MoMo API credentials (MTN_API_USER, MTN_API_KEY, MTN_SUBSCRIPTION_KEY) are not yet set in Vercel Environment Variables. Please add your credentials in Vercel Settings to dispatch live USSD prompts."
+            ? "Minedi ya MTN Ntabwo Yatangijwe. Reba niba amakuru ya Vercel (MTN_API_USER, MTN_API_KEY, MTN_SUBSCRIPTION_KEY) ari yo."
+            : "Unable to authenticate with MTN MoMo. Please check your credentials in Vercel settings."
         });
       }
 
@@ -326,42 +389,39 @@ async function startServer() {
 
     // Check status with MTN API if PENDING
     if (tx.status === 'PENDING') {
-      const token = await getMTNAccessToken();
-      const subKey = (process.env.MTN_SUBSCRIPTION_KEY || process.env.MTN_MOMO_SUBSCRIPTION_KEY || process.env.OCP_APIM_SUBSCRIPTION_KEY || process.env.MOMO_SUBSCRIPTION_KEY || '').trim();
-      const targetEnv = (process.env.MTN_TARGET_ENVIRONMENT || process.env.MTN_MOMO_TARGET_ENV || process.env.MOMO_TARGET_ENV || 'mtnrwanda').trim();
-      const defaultBaseUrl = targetEnv === 'sandbox' ? 'https://sandbox.momodeveloper.mtn.com' : 'https://proxy.momoapi.mtn.com';
-      const rawBaseUrl = process.env.MTN_API_BASE_URL || process.env.MTN_BASE_URL || process.env.MOMO_BASE_URL || defaultBaseUrl;
-      const baseUrl = rawBaseUrl.replace(/\/+$/, '');
+      const config = getMtnConfig();
+      if (config.isConfigured) {
+        const token = await getMTNAccessToken();
+        if (token) {
+          try {
+            const response = await fetch(`${config.baseUrl}/collection/v1_0/requesttopay/${referenceId}`, {
+              method: 'GET',
+              headers: {
+                'Authorization': `Bearer ${token}`,
+                'X-Target-Environment': config.targetEnvironment,
+                'Ocp-Apim-Subscription-Key': config.subKey,
+              },
+            });
 
-      if (token && subKey) {
-        try {
-          const response = await fetch(`${baseUrl}/collection/v1_0/requesttopay/${referenceId}`, {
-            method: 'GET',
-            headers: {
-              'Authorization': `Bearer ${token}`,
-              'X-Target-Environment': targetEnv,
-              'Ocp-Apim-Subscription-Key': subKey,
-            },
-          });
-
-          if (response.ok) {
-            const data = await response.json();
-            if (data.status) {
-              const uppercaseStatus = data.status.toUpperCase() as 'PENDING' | 'SUCCESSFUL' | 'FAILED';
-              tx.status = uppercaseStatus;
-              tx.financialTransactionId = data.financialTransactionId || tx.financialTransactionId;
-              tx.failureReason = data.reason || tx.failureReason;
-              tx.updatedAt = new Date().toISOString();
-              if (uppercaseStatus === 'SUCCESSFUL') {
-                tx.completedAt = new Date().toISOString();
+            if (response.ok) {
+              const data = await response.json();
+              if (data.status) {
+                const uppercaseStatus = data.status.toUpperCase() as 'PENDING' | 'SUCCESSFUL' | 'FAILED';
+                tx.status = uppercaseStatus;
+                tx.financialTransactionId = data.financialTransactionId || tx.financialTransactionId;
+                tx.failureReason = data.reason || tx.failureReason;
+                tx.updatedAt = new Date().toISOString();
+                if (uppercaseStatus === 'SUCCESSFUL') {
+                  tx.completedAt = new Date().toISOString();
+                }
+                momoTransactionsMap.set(referenceId, tx);
               }
-              momoTransactionsMap.set(referenceId, tx);
+            } else {
+              console.warn(`[MTN Status Check] HTTP ${response.status} for reference ${referenceId}`);
             }
-          } else {
-            console.warn(`[MTN Status Check] HTTP ${response.status} for reference ${referenceId}`);
+          } catch (err) {
+            console.error('[MTN Status Exception]:', err);
           }
-        } catch (err) {
-          console.error('[MTN Status Exception]:', err);
         }
       }
     }
