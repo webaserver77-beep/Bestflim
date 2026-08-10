@@ -250,7 +250,14 @@ async function startServer() {
           console.error('[MTN MoMo API Exception]:', apiErr);
         }
       } else {
-        console.warn('[MTN MoMo] Running in pending request mode (credentials awaiting Vercel setup).');
+        console.warn('[MTN MoMo] Credentials missing or placeholder. Prompt cannot be dispatched to phone until environment variables are set in Vercel.');
+        return res.status(400).json({
+          success: false,
+          credentialsConfigured: false,
+          message: req.body.lang === 'rw'
+            ? "💡 Nimero yawe ntikira ubutumwa kuko ibizitiro bya MTN MoMo API (MTN_API_USER, MTN_API_KEY, MTN_SUBSCRIPTION_KEY) ntibirashyirwa muri Environment Variables za Vercel. Nyamuneka bishyire muri Vercel Settings > Environment Variables bwo guhita ibona USSD Push kuri telefoni."
+            : "💡 Mobile Money push prompt cannot reach your phone because MTN MoMo API credentials (MTN_API_USER, MTN_API_KEY, MTN_SUBSCRIPTION_KEY) are not yet set in Vercel Environment Variables. Please add your credentials in Vercel Settings to dispatch live USSD prompts."
+        });
       }
 
       return res.json({
