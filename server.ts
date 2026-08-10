@@ -80,12 +80,36 @@ async function startServer() {
       return cachedMTNToken.token;
     }
 
-    const apiUser = (process.env.MTN_API_USER || process.env.MTN_MOMO_API_USER || '').trim();
-    const apiKey = (process.env.MTN_API_KEY || process.env.MTN_MOMO_API_KEY || '').trim();
-    const subKey = (process.env.MTN_SUBSCRIPTION_KEY || process.env.MTN_MOMO_SUBSCRIPTION_KEY || '').trim();
-    const targetEnv = (process.env.MTN_TARGET_ENVIRONMENT || process.env.MTN_MOMO_TARGET_ENV || 'mtnrwanda').trim();
+    const apiUser = (
+      process.env.MTN_API_USER || 
+      process.env.MTN_MOMO_API_USER || 
+      process.env.MTN_USER_ID || 
+      process.env.MOMO_API_USER || ''
+    ).trim();
+
+    const apiKey = (
+      process.env.MTN_API_KEY || 
+      process.env.MTN_MOMO_API_KEY || 
+      process.env.MOMO_API_KEY || 
+      process.env.MTN_SECRET || ''
+    ).trim();
+
+    const subKey = (
+      process.env.MTN_SUBSCRIPTION_KEY || 
+      process.env.MTN_MOMO_SUBSCRIPTION_KEY || 
+      process.env.OCP_APIM_SUBSCRIPTION_KEY || 
+      process.env.MOMO_SUBSCRIPTION_KEY || ''
+    ).trim();
+
+    const targetEnv = (
+      process.env.MTN_TARGET_ENVIRONMENT || 
+      process.env.MTN_MOMO_TARGET_ENV || 
+      process.env.MOMO_TARGET_ENV || 
+      'mtnrwanda'
+    ).trim();
+
     const defaultBaseUrl = targetEnv === 'sandbox' ? 'https://sandbox.momodeveloper.mtn.com' : 'https://proxy.momoapi.mtn.com';
-    const rawBaseUrl = process.env.MTN_API_BASE_URL || defaultBaseUrl;
+    const rawBaseUrl = process.env.MTN_API_BASE_URL || process.env.MTN_BASE_URL || process.env.MOMO_BASE_URL || defaultBaseUrl;
     const baseUrl = rawBaseUrl.replace(/\/+$/, '');
 
     if (!apiUser || !apiKey || !subKey) {
@@ -93,12 +117,12 @@ async function startServer() {
       return null;
     }
 
-    // Check if credentials are placeholder strings or invalid
+    // Strict check for template strings or dummy values (without false positives on real UUIDs/keys)
     const isPlaceholder = (val: string) => 
-      !val || val.length < 8 || val.includes('here') || val.includes('your_') || val.includes('dummy') || val.includes('MY_') || val.includes('production_');
+      !val || val.length < 5 || val.endsWith('_here') || val.includes('your_') || val.includes('dummy') || val.startsWith('MY_');
 
     if (isPlaceholder(apiUser) || isPlaceholder(apiKey) || isPlaceholder(subKey)) {
-      console.warn('[MTN MoMo] Production credentials not configured yet. Set MTN_API_USER, MTN_API_KEY, and MTN_SUBSCRIPTION_KEY in Vercel Environment Variables.');
+      console.warn('[MTN MoMo] Production credentials contain placeholder strings. Set actual production values in Vercel Environment Variables.');
       return null;
     }
 
@@ -173,9 +197,11 @@ async function startServer() {
 
       const referenceId = crypto.randomUUID();
       const externalId = `bestfilms_${Date.now()}`;
-      const targetEnv = process.env.MTN_TARGET_ENVIRONMENT || process.env.MTN_MOMO_TARGET_ENV || 'mtnrwanda';
-      const baseUrl = process.env.MTN_API_BASE_URL || 'https://proxy.momoapi.mtn.com';
-      const subKey = process.env.MTN_SUBSCRIPTION_KEY || process.env.MTN_MOMO_SUBSCRIPTION_KEY;
+      const targetEnv = (process.env.MTN_TARGET_ENVIRONMENT || process.env.MTN_MOMO_TARGET_ENV || process.env.MOMO_TARGET_ENV || 'mtnrwanda').trim();
+      const defaultBaseUrl = targetEnv === 'sandbox' ? 'https://sandbox.momodeveloper.mtn.com' : 'https://proxy.momoapi.mtn.com';
+      const rawBaseUrl = process.env.MTN_API_BASE_URL || process.env.MTN_BASE_URL || process.env.MOMO_BASE_URL || defaultBaseUrl;
+      const baseUrl = rawBaseUrl.replace(/\/+$/, '');
+      const subKey = (process.env.MTN_SUBSCRIPTION_KEY || process.env.MTN_MOMO_SUBSCRIPTION_KEY || process.env.OCP_APIM_SUBSCRIPTION_KEY || process.env.MOMO_SUBSCRIPTION_KEY || '').trim();
       const callbackUrl = process.env.MTN_CALLBACK_URL || `${process.env.APP_URL || 'https://bestflim.vercel.app'}/api/mtn/callback`;
 
       const transaction: MoMoTransaction = {
@@ -301,9 +327,11 @@ async function startServer() {
     // Check status with MTN API if PENDING
     if (tx.status === 'PENDING') {
       const token = await getMTNAccessToken();
-      const subKey = process.env.MTN_SUBSCRIPTION_KEY || process.env.MTN_MOMO_SUBSCRIPTION_KEY;
-      const targetEnv = process.env.MTN_TARGET_ENVIRONMENT || process.env.MTN_MOMO_TARGET_ENV || 'mtnrwanda';
-      const baseUrl = process.env.MTN_API_BASE_URL || 'https://proxy.momoapi.mtn.com';
+      const subKey = (process.env.MTN_SUBSCRIPTION_KEY || process.env.MTN_MOMO_SUBSCRIPTION_KEY || process.env.OCP_APIM_SUBSCRIPTION_KEY || process.env.MOMO_SUBSCRIPTION_KEY || '').trim();
+      const targetEnv = (process.env.MTN_TARGET_ENVIRONMENT || process.env.MTN_MOMO_TARGET_ENV || process.env.MOMO_TARGET_ENV || 'mtnrwanda').trim();
+      const defaultBaseUrl = targetEnv === 'sandbox' ? 'https://sandbox.momodeveloper.mtn.com' : 'https://proxy.momoapi.mtn.com';
+      const rawBaseUrl = process.env.MTN_API_BASE_URL || process.env.MTN_BASE_URL || process.env.MOMO_BASE_URL || defaultBaseUrl;
+      const baseUrl = rawBaseUrl.replace(/\/+$/, '');
 
       if (token && subKey) {
         try {
