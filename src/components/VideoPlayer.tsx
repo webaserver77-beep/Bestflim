@@ -78,6 +78,10 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ movie, allMovies, onBa
     return movie.ads || [];
   }, [movie.ads]);
 
+  const [activeVideoUrl, setActiveVideoUrl] = useState<string>(
+    activeEpisode ? activeEpisode.videoUrl : (activePart ? activePart.videoUrl : movie.videoUrl)
+  );
+
   // Handle initial preroll ad when movie is loaded or changes - disabled auto-blocking black screen overlay
   useEffect(() => {
     setPlayedAdIds(new Set());
@@ -138,10 +142,6 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ movie, allMovies, onBa
   const handleDownloadMovie = () => {
     setShowDownloadModal(true);
   };
-
-  const [activeVideoUrl, setActiveVideoUrl] = useState<string>(
-    activeEpisode ? activeEpisode.videoUrl : (activePart ? activePart.videoUrl : movie.videoUrl)
-  );
 
   useEffect(() => {
     const url = activeEpisode ? activeEpisode.videoUrl : (activePart ? activePart.videoUrl : movie.videoUrl);

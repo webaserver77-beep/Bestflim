@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Component, ReactNode } from 'react';
 import { Movie } from './types';
 import { MOVIES_DATA } from './data/movies';
 import { seedFirestoreIfEmpty, subscribeMovies, subscribeNotifications } from './lib/firebase';
@@ -263,11 +263,8 @@ export function BestFilmsApp() {
   );
 }
 
-class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean }> {
-  constructor(props: { children: React.ReactNode }) {
-    super(props);
-    this.state = { hasError: false };
-  }
+class ErrorBoundary extends (Component as any) {
+  state = { hasError: false };
 
   static getDerivedStateFromError() {
     return { hasError: true };
@@ -278,7 +275,7 @@ class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { has
   }
 
   render() {
-    if (this.state.hasError) {
+    if ((this as any).state.hasError) {
       return (
         <div className="min-h-screen bg-zinc-950 text-white flex flex-col items-center justify-center p-6 text-center space-y-4">
           <div className="w-16 h-16 rounded-full bg-red-600/20 text-red-500 border border-red-500/40 flex items-center justify-center font-bold text-2xl">
@@ -290,7 +287,7 @@ class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { has
           </p>
           <button
             onClick={() => {
-              this.setState({ hasError: false });
+              (this as any).setState({ hasError: false });
               window.location.href = '/';
             }}
             className="px-6 py-2.5 bg-red-600 hover:bg-red-500 text-white text-xs font-bold rounded-xl shadow-lg cursor-pointer"
@@ -300,7 +297,8 @@ class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { has
         </div>
       );
     }
-    return this.props.children;
+
+    return (this as any).props.children;
   }
 }
 

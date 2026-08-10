@@ -667,7 +667,7 @@ export const DownloadSpeedModal: React.FC<DownloadSpeedModalProps> = ({
 
             {/* Download Button */}
             <button
-              onClick={handleStartDownload}
+              onClick={handleStartDownloadDirectly}
               className="w-full py-3.5 bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500 hover:from-amber-400 hover:to-amber-300 text-zinc-950 rounded-2xl font-black text-sm shadow-xl shadow-amber-950/50 flex items-center justify-center space-x-2 transition-all transform hover:scale-[1.01] active:scale-[0.99]"
             >
               <Download className="w-5 h-5 fill-zinc-950" />
